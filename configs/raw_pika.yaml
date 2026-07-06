@@ -1,0 +1,45 @@
+# raw pika / UMI 质量闸门配置
+# 阈值均为 provisional，待真实分布 + review 队列校准。
+
+source_kind: pika
+
+# TODO: 填真实数据根（可多个）
+data_roots:
+  - ~/data/0703_lyd_01_synced
+  # - ~/data/0701_lyd_01_synced
+  # - ~/data/0702_lyd_01_synced
+
+# 启用的检查（raw gate）
+checks:
+  spike: true            # S1 突变
+  tracking: true         # S1' lighthouse 丢跟踪（pika 关键）
+  extreme: true          # S3 极值（pika 用速度/delta）
+  timestamp: true        # 时间戳/丢帧
+  modality: true         # 模态长度一致
+  video_quality: true    # C3 黑/糊/静止
+  state_action: false    # pika 无独立 action，不适用
+
+# provisional 阈值
+thresholds:
+  spike:
+    residual_sigma: 6.0        # 残差 > k·σ
+    accel_sigma: 6.0
+    jerk_sigma: 6.0
+  tracking:
+    teleport_m: 0.10           # 单帧位移(米)超此判瞬移
+    frozen_min_frames: 30      # 连续完全不变帧数判冻结
+  extreme:
+    alpha: 1.5                 # [q01-α·IQR, q99+α·IQR]
+    use_velocity: true         # pika 站系漂移 → 用速度而非绝对位置
+  timestamp:
+    max_dt_ratio: 3.0          # dt 相对中位数的最大倍率
+  video_quality:
+    black_luma: 8.0            # 平均亮度低于此判黑帧
+    blur_var: 50.0             # 拉普拉斯方差低于此判模糊
+    static_min_frames: 45      # 长静止段帧数（保留夹爪关键帧）
+
+# 输出：mask + report + exclude-list（不重写 hdf5）
+output:
+  write_mask: true
+  write_report: true
+  write_exclude_list: true

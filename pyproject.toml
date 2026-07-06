@@ -1,0 +1,33 @@
+[project]
+name = "data_filter"
+version = "0.1.0"
+description = "多源机器人操作数据的质量检查与高质量数据筛选（依据 Qwen-RobotManip §2.4 curation 管线）"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "h5py>=3.8",
+    "pyyaml>=6.0",
+    "pillow>=10.0",      # JPEG decode / 视频质量检查
+]
+
+[dependency-groups]
+# uv sync 默认安装 dev 组 → uv run pytest 开箱即用
+dev = ["pytest>=8.0"]
+
+# 训练-loader adapter（lazy-reader smoke test 用）后续作为可选 extra，不硬依赖训练仓库：
+# [project.optional-dependencies]
+# xvla = ["..."]
+
+[project.scripts]
+data-filter = "data_filter.pipeline:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["data_filter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

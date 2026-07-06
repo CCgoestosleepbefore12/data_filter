@@ -1,0 +1,52 @@
+# processed XVLA 质量闸门配置（P0，最贴近当前训练数据）
+# 阈值均为 provisional，待真实分布 + review 队列校准。
+
+# TODO: 填一个或多个 processed XVLA 根目录
+data_roots:
+  - ""   # TODO
+
+# 每个 processed episode 声明其来源，决定 attrs 契约
+source_kinds: [pika_umi, nas_teleop]
+
+# hard-validity 检查（失败直接 drop/block）
+hard_checks:
+  schema_shape: true     # qpos (T,20)、图像与 qpos 长度一致
+  finite: true           # 无 NaN/Inf
+  rot6d: true            # ‖a‖‖b‖≈1、a·b≈0、det≈+1
+  gripper: true          # 二值、positive=closed
+  attrs: true            # pose_frame/tip2base/domain/time attrs
+  manifest: true         # manifest 覆盖 + dataset_path 权重一致
+  decode_contract: true  # raw→processed decode 约定一致
+  lazy_reader_smoke: false  # 需配置训练-loader adapter 后开启
+
+# quality 检查（出 score/flag，不 hard drop）
+quality_checks:
+  motion: true           # 速度/加速度/jerk/长静止/过快
+  video_quality: true    # 模糊/黑帧比例
+  coverage: true         # 操作阶段 / 夹爪动作覆盖
+  multicam: true         # 多相机可用性
+
+# provisional 阈值
+thresholds:
+  rot6d:
+    tol: 1.0e-3          # 正交容差（float32 + roundtrip）；判据 = finite + 单位范数 + 正交
+  gripper:
+    binary_tol: 1.0e-3
+  motion:
+    jerk_sigma: 6.0
+    static_min_frames: 45
+    speed_hi_pct: 99     # 速度分布高分位，供速度对齐参考
+  video_quality:
+    black_luma: 8.0
+    blur_var: 50.0
+
+# 决策：三级 + 输出（不重写 hdf5）
+decision:
+  labels: [keep_high_quality, keep_with_downweight, review, drop]
+  review_when_quality_flags_ge: 2   # 透明规则分级（暂不使用加权标量）
+output:
+  write_report: true
+  write_scores: true       # episode_scores.jsonl
+  write_split_lists: true  # keep/downweight/drop
+  write_sampling_weights: true
+  rewrite_hdf5: false

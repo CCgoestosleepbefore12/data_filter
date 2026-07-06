@@ -1,0 +1,44 @@
+# raw teleop / NAS 质量闸门配置
+# 阈值均为 provisional，待真实分布 + review 队列校准。
+
+source_kind: teleop
+
+# TODO: 填 NAS/teleop 真实数据根
+data_roots:
+  - ""   # TODO
+
+# 启用的检查（raw gate）
+checks:
+  spike: true            # S1 突变（qpos/action/eef）
+  tracking: false        # 非 lighthouse，不适用
+  extreme: true          # S3 极值（绝对值可用）
+  timestamp: true        # 时间戳/丢帧（含 eef_left/right_time 同步）
+  modality: true         # 模态长度一致
+  video_quality: true    # C3 黑/糊/静止
+  state_action: false    # S2 qpos vs action 趋势对齐（遥操适用，但 v1 后置，见 spec §8）
+
+# provisional 阈值
+thresholds:
+  spike:
+    residual_sigma: 6.0
+    accel_sigma: 6.0
+    jerk_sigma: 6.0
+  extreme:
+    alpha: 1.5
+    use_velocity: false
+    exempt_gripper: true       # 夹爪维豁免（双峰）
+  state_action:
+    da_threshold: 0.65         # 方向一致性阈值（论文 0.6~0.7）
+    max_lag_frames: 15         # 允许的最大时滞
+  timestamp:
+    max_dt_ratio: 3.0
+    max_clock_skew_s: 0.05     # eef_left vs eef_right vs 主时钟
+  video_quality:
+    black_luma: 8.0
+    blur_var: 50.0
+    static_min_frames: 45
+
+output:
+  write_mask: true
+  write_report: true
+  write_exclude_list: true
