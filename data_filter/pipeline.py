@@ -17,45 +17,65 @@ from .checks.base import CheckResult
 from .checks.gripper import check_gripper
 from .checks.modality import check_modality_lengths
 from .checks.rot6d import check_rot6d
+from .checks.timestamp import check_timestamp
 from .checks.validity import check_finite, check_schema_shape
+from .config import load_config
 from .io import schema
 from .io.loaders import EpisodeSignals, load_processed_xvla
 from .report.writer import write_report
 from .scoring import score_episode
 
 
-def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
-    """对一个 processed episode 跑 v1 hard-validity 检查集。"""
-    thr = cfg.get("thresholds", {})
-    rot_cfg = thr.get("rot6d", {"tol": 1e-3})
-    grip_cfg = thr.get("gripper", {"binary_tol": 1e-3})
+def _enabled(cfg: dict, key: str) -> bool:
+    """检查是否启用（cfg["hard_checks"][key]，缺省 True）。"""
+    return cfg.get("hard_checks", {}).get(key, True)
 
+
+def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
+    """对一个 processed episode 跑 v1 hard-validity 检查集（按 cfg 启用开关）。"""
+    thr = cfg.get("thresholds", {})
+
+    # schema/finite 恒开（切片与后续检查的地基）
     results = [
         check_schema_shape(ep.qpos, {}),
         check_finite({"qpos": ep.qpos, "timestamps": ep.timestamps}, {}),
     ]
 
-    lengths = {"qpos": ep.length}
-    if ep.timestamps is not None:
-        lengths["timestamps"] = int(len(ep.timestamps))
-    lengths.update(ep.image_lengths)
-    results.append(check_modality_lengths(lengths, {}))
+    if _enabled(cfg, "modality"):
+        lengths = {"qpos": ep.length}
+        if ep.timestamps is not None:
+            lengths["timestamps"] = int(len(ep.timestamps))
+        lengths.update(ep.image_lengths)
+        results.append(check_modality_lengths(lengths, {}))
+
+    if _enabled(cfg, "timestamp") and ep.timestamps is not None:
+        results.append(check_timestamp(ep.timestamps, thr.get("timestamp", {})))
 
     # 形状合法才切 rot6d/gripper
     if ep.qpos.ndim == 2 and ep.qpos.shape[1] >= schema.QPOS_DIM:
-        results.append(check_rot6d(ep.qpos[:, schema.LEFT_ROT6D], rot_cfg, name="rot6d_left"))
-        results.append(check_rot6d(ep.qpos[:, schema.RIGHT_ROT6D], rot_cfg, name="rot6d_right"))
-        if ep.gripper is not None:
-            results.append(check_gripper(ep.gripper, ep.attrs, grip_cfg))
+        if _enabled(cfg, "rot6d"):
+            rot_cfg = thr.get("rot6d", {})
+            results.append(check_rot6d(ep.qpos[:, schema.LEFT_ROT6D], rot_cfg, name="rot6d_left"))
+            results.append(check_rot6d(ep.qpos[:, schema.RIGHT_ROT6D], rot_cfg, name="rot6d_right"))
+        if _enabled(cfg, "gripper") and ep.gripper is not None:
+            results.append(check_gripper(ep.gripper, ep.attrs, thr.get("gripper", {})))
 
-    results.append(check_attrs(ep.attrs, ep.source_kind, {}))
+    if _enabled(cfg, "attrs"):
+        results.append(check_attrs(ep.attrs, ep.source_kind, {}))
     return results
 
 
+def _summarize(episodes: list[dict]) -> dict:
+    by_label: dict[str, int] = {}
+    for e in episodes:
+        by_label[e["label"]] = by_label.get(e["label"], 0) + 1
+    return {"total": len(episodes), "by_label": by_label}
+
+
 def run_processed_gate(root: str, cfg: dict | None = None) -> dict:
-    """遍历 root 下的 *.hdf5，跑 processed 质量闸门，返回结构化报告（不写盘）。"""
+    """递归遍历 root 下的 *.hdf5，跑 processed 质量闸门，返回结构化报告（不写盘）。"""
     cfg = cfg or {}
-    files = sorted(glob.glob(os.path.join(root, "*.hdf5")))
+    files = sorted(glob.glob(os.path.join(root, "**", "*.hdf5"), recursive=True))
     episodes: list[dict] = []
 
     for path in files:
@@ -83,11 +103,7 @@ def run_processed_gate(root: str, cfg: dict | None = None) -> dict:
             ],
         })
 
-    by_label: dict[str, int] = {}
-    for e in episodes:
-        by_label[e["label"]] = by_label.get(e["label"], 0) + 1
-    summary = {"total": len(episodes), "by_label": by_label}
-    return {"summary": summary, "episodes": episodes}
+    return {"summary": _summarize(episodes), "episodes": episodes}
 
 
 def main() -> None:
@@ -96,15 +112,26 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description="data_filter 质量闸门")
     ap.add_argument("--gate", required=True, choices=["processed", "raw"])
-    ap.add_argument("--root", required=True, help="待检查的 HDF5 根目录")
+    ap.add_argument("--config", default="processed_xvla", help="configs/<name>.yaml 的 name")
+    ap.add_argument("--root", nargs="*", default=None, help="覆盖 config 的 data_roots（可多个）")
     ap.add_argument("--out", default="outputs", help="报告输出目录")
     args = ap.parse_args()
 
     if args.gate != "processed":
-        raise SystemExit("raw gate 待 milestone 3 实现")
+        raise SystemExit("raw gate 待后续里程碑实现")
 
-    report = run_processed_gate(args.root)
+    cfg = load_config(args.config)
+    roots = args.root if args.root else [r for r in cfg.get("data_roots", []) if r]
+    if not roots:
+        raise SystemExit("未提供 data_roots：用 --root 指定，或在 config 里填")
+
+    episodes: list[dict] = []
+    for root in roots:
+        episodes.extend(run_processed_gate(root, cfg)["episodes"])
+    report = {"summary": _summarize(episodes), "episodes": episodes}
+
     paths = write_report(report, args.out)
+    print(f"roots={roots}")
     print(f"total={report['summary']['total']} by_label={report['summary']['by_label']}")
     print(f"report: {paths['json']}")
 

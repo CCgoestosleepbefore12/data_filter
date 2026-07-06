@@ -10,13 +10,15 @@ source_kinds: [pika_umi, nas_teleop]
 
 # hard-validity 检查（失败直接 drop/block）
 hard_checks:
-  schema_shape: true     # qpos (T,20)、图像与 qpos 长度一致
+  schema_shape: true     # qpos (T,20)
   finite: true           # 无 NaN/Inf
-  rot6d: true            # ‖a‖‖b‖≈1、a·b≈0、det≈+1
-  gripper: true          # 二值、positive=closed
+  modality: true         # 各模态 T 一致
+  timestamp: true        # 单调递增 + dt 无异常大跳变
+  rot6d: true            # finite + 单位范数 + 正交（det 无法判手性）
+  gripper: true          # 二值、值域 [0,1]
   attrs: true            # pose_frame/tip2base/domain/time attrs
-  manifest: true         # manifest 覆盖 + dataset_path 权重一致
-  decode_contract: true  # raw→processed decode 约定一致
+  manifest: false        # 后置（当前训练不强依赖）
+  decode_contract: false # 待实现
   lazy_reader_smoke: false  # 需配置训练-loader adapter 后开启
 
 # quality 检查（出 score/flag，不 hard drop）
@@ -32,6 +34,8 @@ thresholds:
     tol: 1.0e-3          # 正交容差（float32 + roundtrip）；判据 = finite + 单位范数 + 正交
   gripper:
     binary_tol: 1.0e-3
+  timestamp:
+    max_dt_ratio: 3.0    # max dt ≤ ratio·中位 dt，否则判大跳变
   motion:
     jerk_sigma: 6.0
     static_min_frames: 45

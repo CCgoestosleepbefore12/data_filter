@@ -57,6 +57,8 @@ def make_processed_hdf5(
     drop_attr: str | None = None,
     n_img_frames: int | None = None,
     with_timestamps: bool = True,
+    timestamps: np.ndarray | None = None,
+    image_layout: str = "vlen",
     cameras=("cam_high", "cam_left_wrist", "cam_right_wrist"),
 ) -> str:
     """写一个 processed XVLA HDF5。返回路径字符串。
@@ -67,6 +69,7 @@ def make_processed_hdf5(
       drop_attr     -- 删掉某个 attr（测缺失）
       n_img_frames  -- 图像帧数（≠T 用于测模态长度不一致）
       with_timestamps -- 是否写 timestamps
+      image_layout  -- "vlen" 逐帧 dataset；"chunked_index" 分块 group + *_index
     """
     if qpos is None:
         qpos = valid_qpos(T)
@@ -80,12 +83,23 @@ def make_processed_hdf5(
         for k, v in a.items():
             d.attrs[k] = v
         if with_timestamps:
-            h.create_dataset("timestamps", data=(np.arange(T, dtype=np.float32) / 30.0))
+            ts = timestamps if timestamps is not None else (np.arange(T, dtype=np.float32) / 30.0)
+            h.create_dataset("timestamps", data=np.asarray(ts, dtype=np.float32))
         nfr = T if n_img_frames is None else n_img_frames
-        vlen = h5py.vlen_dtype(np.uint8)
-        for cam in cameras:
-            ds = h.create_dataset(f"observations/images/{cam}", (nfr,), dtype=vlen)
-            jpeg = np.frombuffer(b"\xff\xd8\xff\xd9", dtype=np.uint8)  # 占位最小 JPEG 标记
-            for i in range(nfr):
-                ds[i] = jpeg
+        if image_layout == "vlen":
+            vlen = h5py.vlen_dtype(np.uint8)
+            for cam in cameras:
+                ds = h.create_dataset(f"observations/images/{cam}", (nfr,), dtype=vlen)
+                jpeg = np.frombuffer(b"\xff\xd8\xff\xd9", dtype=np.uint8)  # 占位最小 JPEG 标记
+                for i in range(nfr):
+                    ds[i] = jpeg
+        elif image_layout == "chunked_index":
+            for cam in cameras:
+                group = h.create_group(f"observations/images/{cam}")
+                split = max(1, nfr // 2)
+                group.create_dataset("chunk_000000", data=np.zeros((split, 4), dtype=np.uint8))
+                group.create_dataset("chunk_000001", data=np.zeros((nfr - split, 4), dtype=np.uint8))
+                h.create_dataset(f"observations/images/{cam}_index", data=np.arange(nfr, dtype=np.int64))
+        else:
+            raise ValueError(f"unknown image_layout: {image_layout}")
     return str(path)
