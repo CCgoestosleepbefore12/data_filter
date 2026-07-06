@@ -103,3 +103,49 @@ def make_processed_hdf5(
         else:
             raise ValueError(f"unknown image_layout: {image_layout}")
     return str(path)
+
+
+def _write_vlen_images(h, T: int, cameras=("cam_high", "cam_left_wrist", "cam_right_wrist")) -> None:
+    vlen = h5py.vlen_dtype(np.uint8)
+    jpeg = np.frombuffer(b"\xff\xd8\xff\xd9", dtype=np.uint8)
+    for cam in cameras:
+        ds = h.create_dataset(f"observations/images/{cam}", (T,), dtype=vlen)
+        for i in range(T):
+            ds[i] = jpeg
+
+
+def make_raw_pika_hdf5(path, T: int = 12, *, pose: np.ndarray | None = None) -> str:
+    idx = np.arange(T, dtype=np.float32)
+    if pose is None:
+        left = np.stack([0.01 * idx, np.zeros(T), np.zeros(T), np.zeros(T), np.zeros(T), np.zeros(T)], axis=1)
+        right = np.stack([-0.01 * idx, np.zeros(T), np.zeros(T), np.zeros(T), np.zeros(T), np.zeros(T)], axis=1)
+    else:
+        left, right = pose[:, :6], pose[:, 6:12]
+    with h5py.File(path, "w") as h:
+        h.attrs["desc"] = "UMI Pika raw, time-synced (raw values, no fusion transform)"
+        h.create_dataset("observations/pose_left", data=left.astype(np.float32))
+        h.create_dataset("observations/pose_right", data=right.astype(np.float32))
+        h.create_dataset("observations/gripper_left", data=np.zeros(T, dtype=np.float32))
+        h.create_dataset("observations/gripper_right", data=np.ones(T, dtype=np.float32) * 0.09)
+        h.create_dataset("timestamps", data=np.arange(T, dtype=np.float32) / 30.0)
+        _write_vlen_images(h, T)
+    return str(path)
+
+
+def make_raw_teleop_hdf5(path, T: int = 12) -> str:
+    idx = np.arange(T, dtype=np.float32)
+    qpos = np.stack([0.01 * idx for _ in range(14)], axis=1).astype(np.float32)
+    action = qpos.copy()
+    with h5py.File(path, "w") as h:
+        h.attrs["sim"] = False
+        h.create_dataset("action", data=action)
+        h.create_dataset("base_action", data=np.zeros((T, 2), dtype=np.float32))
+        h.create_dataset("observations/qpos", data=qpos)
+        h.create_dataset("observations/qvel", data=np.zeros((T, 14), dtype=np.float32))
+        h.create_dataset("observations/effort", data=np.zeros((T, 14), dtype=np.float32))
+        h.create_dataset("observations/eef_6d", data=np.zeros((T, 20), dtype=np.float32))
+        h.create_dataset("observations/eef_quaternion", data=np.zeros((T, 16), dtype=np.float32))
+        h.create_dataset("observations/eef_left_time", data=np.arange(T, dtype=np.float32) / 30.0)
+        h.create_dataset("observations/eef_right_time", data=np.arange(T, dtype=np.float32) / 30.0)
+        _write_vlen_images(h, T)
+    return str(path)

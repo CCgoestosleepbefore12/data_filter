@@ -9,6 +9,8 @@ from data_filter.checks.gripper import check_gripper
 from data_filter.checks.modality import check_modality_lengths
 from data_filter.checks.motion import check_motion_quality
 from data_filter.checks.rot6d import check_rot6d
+from data_filter.checks.spike import check_spike
+from data_filter.checks.tracking import check_tracking
 from data_filter.checks.validity import check_finite, check_schema_shape
 from data_filter.io import schema
 
@@ -120,3 +122,30 @@ def test_motion_quality_flags_static_and_low_gripper_coverage():
     assert r.passed
     assert "long_static" in r.flags
     assert "low_gripper_coverage" in r.flags
+
+
+# ------------------------- raw checks -------------------------
+def test_tracking_flags_nan_as_hard_fail():
+    pose = np.zeros((12, 6), dtype=np.float32)
+    pose[3, 0] = np.nan
+    r = check_tracking(pose, {})
+    assert r.hard_fail()
+    assert "nan_inf" in r.flags
+
+
+def test_tracking_flags_teleport_as_quality():
+    pose = np.zeros((12, 6), dtype=np.float32)
+    pose[:, 0] = np.linspace(0, 0.05, 12)
+    pose[6, 0] += 0.5
+    r = check_tracking(pose, {"teleport_m": 0.1})
+    assert r.passed and not r.hard_fail()
+    assert "teleport" in r.flags
+
+
+def test_spike_flags_large_jump():
+    signal = np.zeros((30, 3), dtype=np.float32)
+    signal[:, 0] = np.linspace(0, 0.1, 30)
+    signal[12:16, 0] += 5.0
+    r = check_spike(signal, {"min_spike_frames": 1})
+    assert r.passed
+    assert "spike" in r.flags

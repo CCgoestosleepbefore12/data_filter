@@ -5,7 +5,7 @@
 - 逐帧 vlen dataset: observations/images/cam_high, shape=(T,)
 - 分块 group + index: observations/images/cam_high + observations/images/cam_high_index
 
-raw loader 待 milestone 3 实现。
+raw loader 读取 raw PIKA/UMI 与 raw teleop/NAS 的轻量信号，不解码图像。
 """
 
 from __future__ import annotations
@@ -105,11 +105,57 @@ def _collect_image_lengths(h: h5py.File) -> tuple[tuple[str, ...], dict[str, int
 
 
 def load_raw_pika(path: str) -> EpisodeSignals:
-    raise NotImplementedError
+    """读 raw PIKA/UMI HDF5。pose 合并为 [left6,right6]，gripper 为 (T,2)。"""
+    with h5py.File(path, "r") as h:
+        pose_l = h[schema.RAW_PIKA["pose"][0]][:]
+        pose_r = h[schema.RAW_PIKA["pose"][1]][:]
+        grip_l = h[schema.RAW_PIKA["gripper"][0]][:]
+        grip_r = h[schema.RAW_PIKA["gripper"][1]][:]
+        pose = np.concatenate([pose_l, pose_r], axis=1)
+        gripper = np.stack([grip_l, grip_r], axis=1)
+        timestamps = h[schema.RAW_PIKA["timestamps"]][:] if schema.RAW_PIKA["timestamps"] in h else None
+        attrs = {k: _to_py(v) for k, v in h.attrs.items()}
+        image_keys, image_lengths = _collect_image_lengths(h)
+
+    return EpisodeSignals(
+        source_kind="pika",
+        path=str(path),
+        length=int(pose.shape[0]),
+        pose=pose,
+        gripper=gripper,
+        timestamps=timestamps,
+        attrs=attrs,
+        image_keys=image_keys,
+        image_lengths=image_lengths,
+    )
 
 
 def load_raw_teleop(path: str) -> EpisodeSignals:
-    raise NotImplementedError
+    """读 raw teleop/NAS HDF5。timestamp 优先用 eef_left_time。"""
+    with h5py.File(path, "r") as h:
+        qpos = h[schema.RAW_TELEOP["qpos"]][:]
+        action = h[schema.RAW_TELEOP["action"]][:]
+        timestamps = (
+            h[schema.RAW_TELEOP["eef_time"][0]][:]
+            if schema.RAW_TELEOP["eef_time"][0] in h
+            else None
+        )
+        attrs = {k: _to_py(v) for k, v in h.attrs.items()}
+        if schema.RAW_TELEOP["eef_time"][1] in h:
+            attrs["eef_right_time_length"] = int(h[schema.RAW_TELEOP["eef_time"][1]].shape[0])
+        image_keys, image_lengths = _collect_image_lengths(h)
+
+    return EpisodeSignals(
+        source_kind="teleop",
+        path=str(path),
+        length=int(qpos.shape[0]),
+        qpos=qpos,
+        action=action,
+        timestamps=timestamps,
+        attrs=attrs,
+        image_keys=image_keys,
+        image_lengths=image_lengths,
+    )
 
 
 def load_processed_xvla(path: str) -> EpisodeSignals:

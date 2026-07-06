@@ -9,10 +9,11 @@ import numpy as np
 from data_filter.checks.base import CheckResult
 from data_filter.io import schema
 from data_filter.pipeline import run_processed_gate
+from data_filter.pipeline import run_raw_gate
 from data_filter.report.writer import write_report
 from data_filter.scoring import score_episode
 
-from ._fixtures import make_processed_hdf5, valid_qpos
+from ._fixtures import make_processed_hdf5, make_raw_pika_hdf5, make_raw_teleop_hdf5, valid_qpos
 
 
 # ------------------------- score_episode -------------------------
@@ -88,3 +89,20 @@ def test_write_report_outputs(tmp_path):
     assert (tmp_path / "out" / "keep_high_quality_list.txt").exists()
     assert (tmp_path / "out" / "review_list.txt").exists()
     assert (tmp_path / "out" / "downweight_list.txt").exists()
+
+
+def test_raw_gate_pika_end_to_end(tmp_path):
+    make_raw_pika_hdf5(tmp_path / "raw.hdf5", T=20)
+    report = run_raw_gate(str(tmp_path), "pika", {"checks": {"tracking": True, "spike": True}})
+    assert report["summary"]["total"] == 1
+    assert report["episodes"][0]["label"] in {"keep_high_quality", "keep_with_downweight", "review"}
+    names = {c["name"] for c in report["episodes"][0]["checks"]}
+    assert {"finite", "modality", "timestamp", "tracking", "spike"}.issubset(names)
+
+
+def test_raw_gate_teleop_end_to_end(tmp_path):
+    make_raw_teleop_hdf5(tmp_path / "raw.hdf5", T=20)
+    report = run_raw_gate(str(tmp_path), "teleop", {"checks": {"tracking": False, "spike": True}})
+    assert report["summary"]["total"] == 1
+    names = {c["name"] for c in report["episodes"][0]["checks"]}
+    assert {"finite", "modality", "timestamp", "spike"}.issubset(names)

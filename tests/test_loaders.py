@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from data_filter.io.loaders import load_processed_xvla
+from data_filter.io.loaders import load_processed_xvla, load_raw_pika, load_raw_teleop
 
-from ._fixtures import make_processed_hdf5
+from ._fixtures import make_processed_hdf5, make_raw_pika_hdf5, make_raw_teleop_hdf5
 
 
 def test_load_processed_good_pika(tmp_path):
@@ -44,3 +44,27 @@ def test_load_processed_chunked_image_group_uses_index_length(tmp_path):
     assert len(ep.image_keys) == 3
     assert all(v == 7 for v in ep.image_lengths.values())
     assert all(not k.endswith("_index") for k in ep.image_keys)
+
+
+def test_load_raw_pika(tmp_path):
+    p = make_raw_pika_hdf5(tmp_path / "raw_pika.hdf5", T=10)
+    ep = load_raw_pika(p)
+
+    assert ep.source_kind == "pika"
+    assert ep.length == 10
+    assert ep.pose.shape == (10, 12)
+    assert ep.gripper.shape == (10, 2)
+    assert ep.timestamps.shape == (10,)
+    assert all(v == 10 for v in ep.image_lengths.values())
+
+
+def test_load_raw_teleop(tmp_path):
+    p = make_raw_teleop_hdf5(tmp_path / "raw_teleop.hdf5", T=11)
+    ep = load_raw_teleop(p)
+
+    assert ep.source_kind == "teleop"
+    assert ep.length == 11
+    assert ep.qpos.shape == (11, 14)
+    assert ep.action.shape == (11, 14)
+    assert ep.timestamps.shape == (11,)
+    assert ep.attrs["eef_right_time_length"] == 11

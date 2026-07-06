@@ -18,11 +18,13 @@ from .checks.gripper import check_gripper
 from .checks.modality import check_modality_lengths
 from .checks.motion import check_motion_quality
 from .checks.rot6d import check_rot6d
+from .checks.spike import check_spike
 from .checks.timestamp import check_timestamp
+from .checks.tracking import check_tracking
 from .checks.validity import check_finite, check_schema_shape
 from .config import load_config
 from .io import schema
-from .io.loaders import EpisodeSignals, load_processed_xvla
+from .io.loaders import EpisodeSignals, load_processed_xvla, load_raw_pika, load_raw_teleop
 from .report.writer import write_report
 from .scoring import score_episode
 
@@ -35,6 +37,11 @@ def _enabled(cfg: dict, key: str) -> bool:
 def _quality_enabled(cfg: dict, key: str) -> bool:
     """quality 检查是否启用（cfg["quality_checks"][key]，缺省 False）。"""
     return cfg.get("quality_checks", {}).get(key, False)
+
+
+def _raw_enabled(cfg: dict, key: str) -> bool:
+    """raw 检查是否启用（cfg["checks"][key]，缺省 True）。"""
+    return cfg.get("checks", {}).get(key, True)
 
 
 def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
@@ -80,6 +87,91 @@ def _summarize(episodes: list[dict]) -> dict:
     return {"total": len(episodes), "by_label": by_label}
 
 
+def _episode_record(path: str, source_kind: str, results: list[CheckResult], cfg: dict) -> dict:
+    score = score_episode(results, cfg)
+    return {
+        "path": path,
+        "source_kind": source_kind,
+        "label": score["label"],
+        "reasons": score["reasons"],
+        "checks": [
+            {"name": r.name, "passed": r.passed, "severity": r.severity,
+             "flags": r.flags, "metrics": r.metrics}
+            for r in results
+        ],
+    }
+
+
+def _raw_lengths(ep: EpisodeSignals) -> dict[str, int]:
+    lengths = {}
+    if ep.pose is not None:
+        lengths["pose"] = int(ep.pose.shape[0])
+    if ep.qpos is not None:
+        lengths["qpos"] = int(ep.qpos.shape[0])
+    if ep.action is not None:
+        lengths["action"] = int(ep.action.shape[0])
+    if ep.gripper is not None:
+        lengths["gripper"] = int(ep.gripper.shape[0])
+    if ep.timestamps is not None:
+        lengths["timestamps"] = int(len(ep.timestamps))
+    if "eef_right_time_length" in ep.attrs:
+        lengths["eef_right_time"] = int(ep.attrs["eef_right_time_length"])
+    lengths.update(ep.image_lengths)
+    return lengths
+
+
+def _run_raw_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
+    thr = cfg.get("thresholds", {})
+    results: list[CheckResult] = []
+    arrays = {}
+    if ep.pose is not None:
+        arrays["pose"] = ep.pose
+    if ep.qpos is not None:
+        arrays["qpos"] = ep.qpos
+    if ep.action is not None:
+        arrays["action"] = ep.action
+    if ep.gripper is not None:
+        arrays["gripper"] = ep.gripper
+    if ep.timestamps is not None:
+        arrays["timestamps"] = ep.timestamps
+    results.append(check_finite(arrays, {}, name="finite"))
+
+    if _raw_enabled(cfg, "modality"):
+        results.append(check_modality_lengths(_raw_lengths(ep), {}))
+    if _raw_enabled(cfg, "timestamp") and ep.timestamps is not None:
+        results.append(check_timestamp(ep.timestamps, thr.get("timestamp", {})))
+    if _raw_enabled(cfg, "tracking") and ep.source_kind == "pika" and ep.pose is not None:
+        results.append(check_tracking(ep.pose[:, :6], thr.get("tracking", {})))
+        results.append(check_tracking(ep.pose[:, 6:12], thr.get("tracking", {})))
+    if _raw_enabled(cfg, "spike"):
+        signal = ep.pose if ep.pose is not None else ep.qpos
+        if signal is not None:
+            results.append(check_spike(signal, thr.get("spike", {})))
+    return results
+
+
+def run_raw_gate(root: str, source: str, cfg: dict | None = None) -> dict:
+    """递归遍历 root 下 raw *.hdf5，跑 raw 质量闸门。source: pika | teleop。"""
+    cfg = cfg or {}
+    loader = load_raw_pika if source == "pika" else load_raw_teleop
+    files = sorted(glob.glob(os.path.join(root, "**", "*.hdf5"), recursive=True))
+    episodes: list[dict] = []
+    for path in files:
+        try:
+            ep = loader(path)
+        except Exception as e:
+            episodes.append({
+                "path": path,
+                "source_kind": source,
+                "label": "drop",
+                "reasons": [{"check": "load", "flags": [f"{type(e).__name__}: {e}"]}],
+                "checks": [],
+            })
+            continue
+        episodes.append(_episode_record(path, ep.source_kind, _run_raw_checks(ep, cfg), cfg))
+    return {"summary": _summarize(episodes), "episodes": episodes}
+
+
 def run_processed_gate(root: str, cfg: dict | None = None) -> dict:
     """递归遍历 root 下的 *.hdf5，跑 processed 质量闸门，返回结构化报告（不写盘）。"""
     cfg = cfg or {}
@@ -97,19 +189,7 @@ def run_processed_gate(root: str, cfg: dict | None = None) -> dict:
             })
             continue
 
-        results = _run_processed_checks(ep, cfg)
-        score = score_episode(results, cfg)
-        episodes.append({
-            "path": path,
-            "source_kind": ep.source_kind,
-            "label": score["label"],
-            "reasons": score["reasons"],
-            "checks": [
-                {"name": r.name, "passed": r.passed, "severity": r.severity,
-                 "flags": r.flags, "metrics": r.metrics}
-                for r in results
-            ],
-        })
+        episodes.append(_episode_record(path, ep.source_kind, _run_processed_checks(ep, cfg), cfg))
 
     return {"summary": _summarize(episodes), "episodes": episodes}
 
@@ -121,12 +201,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="data_filter 质量闸门")
     ap.add_argument("--gate", required=True, choices=["processed", "raw"])
     ap.add_argument("--config", default="processed_xvla", help="configs/<name>.yaml 的 name")
+    ap.add_argument("--source", choices=["pika", "teleop"], default=None, help="raw gate 数据源")
     ap.add_argument("--root", nargs="*", default=None, help="覆盖 config 的 data_roots（可多个）")
     ap.add_argument("--out", default="outputs", help="报告输出目录")
     args = ap.parse_args()
-
-    if args.gate != "processed":
-        raise SystemExit("raw gate 待后续里程碑实现")
 
     cfg = load_config(args.config)
     roots = args.root if args.root else [r for r in cfg.get("data_roots", []) if r]
@@ -135,10 +213,17 @@ def main() -> None:
 
     episodes: list[dict] = []
     for root in roots:
-        episodes.extend(run_processed_gate(root, cfg)["episodes"])
+        if args.gate == "processed":
+            episodes.extend(run_processed_gate(root, cfg)["episodes"])
+        else:
+            source = args.source or cfg.get("source_kind")
+            if source not in {"pika", "teleop"}:
+                raise SystemExit("raw gate 需要 --source pika|teleop，或 config.source_kind")
+            episodes.extend(run_raw_gate(root, source, cfg)["episodes"])
     report = {"summary": _summarize(episodes), "episodes": episodes}
 
-    paths = write_report(report, args.out)
+    prefix = "processed_validity" if args.gate == "processed" else "raw_quality"
+    paths = write_report(report, args.out, prefix=prefix)
     print(f"roots={roots}")
     print(f"total={report['summary']['total']} by_label={report['summary']['by_label']}")
     print(f"report: {paths['json']}")
