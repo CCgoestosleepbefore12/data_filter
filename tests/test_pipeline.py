@@ -40,6 +40,9 @@ def test_score_quality_flags_downweights_or_reviews():
     two = [CheckResult("motion", passed=True, severity="warn", flags=["long_static", "low_gripper_coverage"])]
     assert score_episode(two, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
 
+    frozen = [CheckResult("arm_activity", passed=True, severity="warn", flags=["right_arm_frozen"])]
+    assert score_episode(frozen, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
+
 
 # ------------------------- 端到端 -------------------------
 def test_processed_gate_end_to_end(tmp_path):

@@ -16,6 +16,11 @@ from __future__ import annotations
 
 from .checks.base import CheckResult
 
+REVIEW_FLAGS = {
+    "left_arm_frozen",
+    "right_arm_frozen",
+}
+
 
 def score_episode(results: list[CheckResult], cfg: dict | None = None) -> dict:
     """results: 一个 episode 的所有 CheckResult。返回 {label, reasons}。
@@ -33,10 +38,11 @@ def score_episode(results: list[CheckResult], cfg: dict | None = None) -> dict:
     quality = [r for r in results if r.flags and not r.hard_fail()]
     reasons = [{"check": r.name, "flags": r.flags} for r in quality]
     n_flags = sum(len(r.flags) for r in quality)
+    flag_set = {flag for r in quality for flag in r.flags}
     decision = cfg.get("decision", {})
     review_at = int(decision.get("review_when_quality_flags_ge", 2))
 
-    if n_flags >= review_at:
+    if flag_set & REVIEW_FLAGS or n_flags >= review_at:
         return {"label": "review", "reasons": reasons}
     if n_flags > 0:
         return {"label": "keep_with_downweight", "reasons": reasons}
