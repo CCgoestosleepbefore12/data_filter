@@ -28,3 +28,18 @@ def test_load_processed_infers_nas_source(tmp_path):
 
     assert ep.source_kind == "nas_teleop"
     assert ep.attrs["source_kind"] == "nas_teleoperation_eef6d"
+
+
+def test_load_processed_chunked_image_group_uses_index_length(tmp_path):
+    p = make_processed_hdf5(
+        tmp_path / "ep.hdf5",
+        T=8,
+        source="pika_umi",
+        n_img_frames=7,
+        image_layout="chunked_index",
+    )
+    ep = load_processed_xvla(p)
+
+    assert len(ep.image_keys) == 3
+    assert all(v == 7 for v in ep.image_lengths.values())
+    assert all(not k.endswith("_index") for k in ep.image_keys)

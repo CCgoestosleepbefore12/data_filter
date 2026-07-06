@@ -1,7 +1,9 @@
 """HDF5 loaders：raw pika / raw teleop / processed XVLA → 统一内部信号表示。
 
 只做读取与字段抽取（按 io/schema.py 的声明），不做任何质量判断。
-图像默认惰性读取（vlen JPEG bytes），只取帧数不整段解码进内存。
+图像默认惰性读取，只取帧数不整段解码进内存。兼容两类布局：
+- 逐帧 vlen dataset: observations/images/cam_high, shape=(T,)
+- 分块 group + index: observations/images/cam_high + observations/images/cam_high_index
 
 raw loader 待 milestone 3 实现。
 """
@@ -52,6 +54,54 @@ def _infer_source(attrs: dict) -> str:
     return "unknown"
 
 
+def _dataset_len(obj) -> int:
+    """取 dataset 第一维长度；标量 dataset 视为 1。"""
+    return int(obj.shape[0]) if obj.shape else 1
+
+
+def _group_chunk_len(group: h5py.Group) -> int:
+    """分块图像 group 无 index 时的兜底：累加子 dataset 第一维。"""
+    total = 0
+    for child in group.values():
+        if isinstance(child, h5py.Dataset):
+            total += _dataset_len(child)
+    return total
+
+
+def _collect_image_lengths(h: h5py.File) -> tuple[tuple[str, ...], dict[str, int]]:
+    """收集 processed 图像模态长度，不解码图像。
+
+    真实 processed 数据可能把每路相机存成分块 group，并用同级 `*_index`
+    dataset 表示帧索引；这种情况下以 index 长度作为帧数。
+    """
+    img_group = "observations/images"
+    if img_group not in h:
+        return (), {}
+
+    image_keys: list[str] = []
+    image_lengths: dict[str, int] = {}
+    g = h[img_group]
+    for name, obj in g.items():
+        if name.endswith("_index"):
+            continue
+        key = f"{img_group}/{name}"
+        index_key = f"{name}_index"
+        if index_key in g and isinstance(g[index_key], h5py.Dataset):
+            length = _dataset_len(g[index_key])
+        elif isinstance(obj, h5py.Dataset):
+            length = _dataset_len(obj)
+        elif isinstance(obj, h5py.Group):
+            if "index" in obj and isinstance(obj["index"], h5py.Dataset):
+                length = _dataset_len(obj["index"])
+            else:
+                length = _group_chunk_len(obj)
+        else:
+            continue
+        image_keys.append(key)
+        image_lengths[key] = int(length)
+    return tuple(image_keys), image_lengths
+
+
 def load_raw_pika(path: str) -> EpisodeSignals:
     raise NotImplementedError
 
@@ -74,14 +124,7 @@ def load_processed_xvla(path: str) -> EpisodeSignals:
         )
         timestamps = h["timestamps"][:] if "timestamps" in h else None
 
-        image_keys: list[str] = []
-        image_lengths: dict[str, int] = {}
-        img_group = "observations/images"
-        if img_group in h:
-            for cam in h[img_group]:
-                key = f"{img_group}/{cam}"
-                image_keys.append(key)
-                image_lengths[key] = int(h[key].shape[0])
+        image_keys, image_lengths = _collect_image_lengths(h)
 
     return EpisodeSignals(
         source_kind=_infer_source(attrs),
@@ -91,6 +134,6 @@ def load_processed_xvla(path: str) -> EpisodeSignals:
         gripper=gripper,
         timestamps=timestamps,
         attrs=attrs,
-        image_keys=tuple(image_keys),
+        image_keys=image_keys,
         image_lengths=image_lengths,
     )
