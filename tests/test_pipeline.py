@@ -102,7 +102,9 @@ def test_raw_gate_pika_end_to_end(tmp_path):
 
 def test_raw_gate_teleop_end_to_end(tmp_path):
     make_raw_teleop_hdf5(tmp_path / "raw.hdf5", T=20)
-    report = run_raw_gate(str(tmp_path), "teleop", {"checks": {"tracking": False, "spike": True}})
+    report = run_raw_gate(
+        str(tmp_path), "teleop", {"checks": {"tracking": False, "spike": True, "arm_activity": True}}
+    )
     assert report["summary"]["total"] == 1
     names = {c["name"] for c in report["episodes"][0]["checks"]}
-    assert {"finite", "modality", "timestamp", "spike"}.issubset(names)
+    assert {"finite", "modality", "timestamp", "spike", "arm_activity"}.issubset(names)

@@ -8,6 +8,7 @@ from data_filter.checks.attrs import check_attrs
 from data_filter.checks.gripper import check_gripper
 from data_filter.checks.modality import check_modality_lengths
 from data_filter.checks.motion import check_motion_quality
+from data_filter.checks.raw_activity import check_bimanual_activity
 from data_filter.checks.rot6d import check_rot6d
 from data_filter.checks.spike import check_spike
 from data_filter.checks.tracking import check_tracking
@@ -149,3 +150,13 @@ def test_spike_flags_large_jump():
     r = check_spike(signal, {"min_spike_frames": 1})
     assert r.passed
     assert "spike" in r.flags
+
+
+def test_bimanual_activity_flags_frozen_right_arm():
+    left = np.stack([np.linspace(0, 1, 20) for _ in range(7)], axis=1)
+    right = np.ones((20, 7), dtype=np.float32) * 0.3
+    signal = np.concatenate([left, right], axis=1)
+    r = check_bimanual_activity(signal, {"min_unique_rows": 3, "min_mean_std": 1e-5})
+    assert r.passed
+    assert "right_arm_frozen" in r.flags
+    assert "left_arm_frozen" not in r.flags

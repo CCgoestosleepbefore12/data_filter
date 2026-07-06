@@ -16,6 +16,7 @@ checks:
   modality: true         # 模态长度一致
   video_quality: true    # C3 黑/糊/静止
   state_action: false    # S2 qpos vs action 趋势对齐（遥操适用，但 v1 后置，见 spec §8）
+  arm_activity: true     # 单臂信号冻结/缺失
 
 # provisional 阈值
 thresholds:
@@ -34,6 +35,10 @@ thresholds:
   timestamp:
     max_dt_ratio: 3.0
     max_clock_skew_s: 0.05     # eef_left vs eef_right vs 主时钟
+  arm_activity:
+    min_unique_rows: 3
+    min_mean_std: 1.0e-5
+    unique_decimals: 6
   video_quality:
     black_luma: 8.0
     blur_var: 50.0

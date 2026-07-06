@@ -17,6 +17,7 @@ from .checks.base import CheckResult
 from .checks.gripper import check_gripper
 from .checks.modality import check_modality_lengths
 from .checks.motion import check_motion_quality
+from .checks.raw_activity import check_bimanual_activity
 from .checks.rot6d import check_rot6d
 from .checks.spike import check_spike
 from .checks.timestamp import check_timestamp
@@ -147,6 +148,10 @@ def _run_raw_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
         signal = ep.pose if ep.pose is not None else ep.qpos
         if signal is not None:
             results.append(check_spike(signal, thr.get("spike", {})))
+    if _raw_enabled(cfg, "arm_activity"):
+        signal = ep.pose if ep.pose is not None else ep.qpos
+        if signal is not None:
+            results.append(check_bimanual_activity(signal, thr.get("arm_activity", {})))
     return results
 
 
