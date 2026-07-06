@@ -77,8 +77,8 @@ time_alignment_status = verified_common_time_axis
 NAS/teleop processed 数据应满足：
 
 ```text
-source_kind = nas_teleoperation_eef6d
 domain_name = nas_real_teleop
+source_key = observations/eef_6d
 rot6d = converted_from_row_major_R[:,:2]_to_concat_cols
 time_alignment_status = verified_common_time_axis
 ```

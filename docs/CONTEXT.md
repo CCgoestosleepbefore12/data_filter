@@ -19,7 +19,7 @@
 - **pose9**：`[xyz(3), rot6d(6)]`，单臂 9 维。
 - **rot6d**：6D 旋转表示 = `concat(R[:,0], R[:,1])`（真旋转矩阵前两列，列拼接）。约定 A=构造即正交。
 - **qpos (20D)**：processed 训练向量 `[left_pose9, left_grip, right_pose9, right_grip]`。
-- **domain_name / source_kind / time_alignment_status**：processed HDF5 的来源与时间对齐 attrs 契约。
+- **domain_name / source_key / time_alignment_status**：processed HDF5 的来源与时间对齐 attrs 契约。
 
 ## 检查 / 决策
 - **Raw quality gate**：对 raw 数据的质量闸门。

@@ -25,7 +25,7 @@
 - `observations/qpos` (T,20) = `[left_pose9, left_grip(9), right_pose9, right_grip(19)]`，`pose9=[xyz(3), rot6d(6)]`，`rot6d=concat(R[:,0],R[:,1])`，gripper binary/positive=closed。
 - attrs 契约（按来源）见 `schema.PROCESSED_ATTRS`：
   - pika_umi：`pose_frame=robot_base_tip2base_piper_tcp_config`、`tip2base_applied=True`、`relative_to_first_frame=False`、`domain_name∈{...}`、`time_alignment_status=verified_common_time_axis`。
-  - nas_teleop：`source_kind=nas_teleoperation_eef6d`、`domain_name=nas_real_teleop`、`time_alignment_status=verified_common_time_axis`。
+  - nas_teleop：`domain_name=nas_real_teleop`、`source_key=observations/eef_6d`、`time_alignment_status=verified_common_time_axis`。
 
 ## 3. 四阶段
 

@@ -49,6 +49,8 @@ def _infer_source(attrs: dict) -> str:
     """从 attrs 粗判 processed 来源，决定后续 attrs 契约。"""
     if attrs.get("source_kind") == "nas_teleoperation_eef6d":
         return "nas_teleop"
+    if attrs.get("domain_name") == "nas_real_teleop":
+        return "nas_teleop"
     if "tip2base_applied" in attrs or str(attrs.get("domain_name", "")).startswith("pika"):
         return "pika_umi"
     return "unknown"

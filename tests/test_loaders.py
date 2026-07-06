@@ -27,7 +27,8 @@ def test_load_processed_infers_nas_source(tmp_path):
     ep = load_processed_xvla(p)
 
     assert ep.source_kind == "nas_teleop"
-    assert ep.attrs["source_kind"] == "nas_teleoperation_eef6d"
+    assert ep.attrs["domain_name"] == "nas_real_teleop"
+    assert ep.attrs["source_key"] == "observations/eef_6d"
 
 
 def test_load_processed_chunked_image_group_uses_index_length(tmp_path):

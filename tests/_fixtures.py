@@ -19,8 +19,8 @@ DEFAULT_ATTRS = {
         "time_alignment_status": "verified_common_time_axis",
     },
     "nas_teleop": {
-        "source_kind": "nas_teleoperation_eef6d",
         "domain_name": "nas_real_teleop",
+        "source_key": "observations/eef_6d",
         "time_alignment_status": "verified_common_time_axis",
     },
 }
