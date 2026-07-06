@@ -28,7 +28,8 @@ def test_timestamp_dt_jump():
     ts = np.arange(20, dtype=float) / 30.0
     ts[10:] += 1.0  # 制造一个 ~30x 中位 dt 的大跳变
     r = check_timestamp(ts, {"max_dt_ratio": 3.0})
-    assert r.hard_fail() and "dt_jump" in r.flags
+    assert r.passed and not r.hard_fail()
+    assert r.severity == "warn" and "dt_jump" in r.flags
 
 
 # ------------------------- 递归扫描 -------------------------

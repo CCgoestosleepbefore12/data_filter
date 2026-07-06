@@ -48,6 +48,8 @@ def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> C
     static_min_frames = int(cfg.get("static_min_frames", 45))
     static_speed_eps = float(cfg.get("static_speed_eps", 1e-5))
     min_gripper_changes = int(cfg.get("min_gripper_changes", 1))
+    min_speed_outlier_frames = int(cfg.get("min_speed_outlier_frames", 3))
+    min_jerk_outlier_frames = int(cfg.get("min_jerk_outlier_frames", 3))
 
     xyz = np.concatenate(
         [qpos[:, schema.LEFT_XYZ], qpos[:, schema.RIGHT_XYZ]], axis=1
@@ -67,9 +69,12 @@ def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> C
     gripper_changes = int(np.count_nonzero(np.any(np.diff(gripper, axis=0) != 0, axis=1)))
 
     flags: list[str] = []
-    if np.any(speed_fast):
+    speed_outlier_frames = int(np.count_nonzero(speed_fast))
+    jerk_outlier_frames = int(np.count_nonzero(jerk_spike))
+
+    if speed_outlier_frames >= min_speed_outlier_frames:
         flags.append("speed_outlier")
-    if np.any(jerk_spike):
+    if jerk_outlier_frames >= min_jerk_outlier_frames:
         flags.append("jerk_outlier")
     if static_run >= static_min_frames:
         flags.append("long_static")
@@ -80,11 +85,11 @@ def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> C
         "speed_median": float(np.median(speed)) if speed.size else 0.0,
         "speed_max": float(speed.max()) if speed.size else 0.0,
         "speed_limit": float(speed_limit),
-        "speed_outlier_frames": int(np.count_nonzero(speed_fast)),
+        "speed_outlier_frames": speed_outlier_frames,
         "jerk_abs_median": float(np.median(jerk_abs)) if jerk_abs.size else 0.0,
         "jerk_abs_max": float(jerk_abs.max()) if jerk_abs.size else 0.0,
         "jerk_limit": float(jerk_limit),
-        "jerk_outlier_frames": int(np.count_nonzero(jerk_spike)),
+        "jerk_outlier_frames": jerk_outlier_frames,
         "longest_static_run": static_run,
         "gripper_changes": gripper_changes,
     }

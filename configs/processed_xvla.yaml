@@ -41,6 +41,8 @@ thresholds:
     static_min_frames: 45
     static_speed_eps: 1.0e-5
     min_gripper_changes: 1
+    min_speed_outlier_frames: 3
+    min_jerk_outlier_frames: 3
     speed_hi_pct: 99     # 速度分布高分位，供速度对齐参考
   video_quality:
     black_luma: 8.0
