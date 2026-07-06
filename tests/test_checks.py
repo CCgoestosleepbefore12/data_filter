@@ -7,6 +7,7 @@ import numpy as np
 from data_filter.checks.attrs import check_attrs
 from data_filter.checks.gripper import check_gripper
 from data_filter.checks.modality import check_modality_lengths
+from data_filter.checks.motion import check_motion_quality
 from data_filter.checks.rot6d import check_rot6d
 from data_filter.checks.validity import check_finite, check_schema_shape
 from data_filter.io import schema
@@ -100,3 +101,22 @@ def test_attrs_pika_wrong_domain():
 
 def test_attrs_nas_complete():
     assert check_attrs(dict(DEFAULT_ATTRS["nas_teleop"]), "nas_teleop", CFG).passed
+
+
+# ------------------------- motion quality -------------------------
+def test_motion_quality_ok_on_regular_motion():
+    q = valid_qpos(80)
+    r = check_motion_quality(q, {"static_min_frames": 45, "min_gripper_changes": 1})
+    assert r.passed
+    assert not r.flags
+
+
+def test_motion_quality_flags_static_and_low_gripper_coverage():
+    q = valid_qpos(80)
+    q[:, :3] = q[0, :3]
+    q[:, 10:13] = q[0, 10:13]
+    q[:, [schema.LEFT_GRIP, schema.RIGHT_GRIP]] = 1.0
+    r = check_motion_quality(q, {"static_min_frames": 10, "min_gripper_changes": 1})
+    assert r.passed
+    assert "long_static" in r.flags
+    assert "low_gripper_coverage" in r.flags

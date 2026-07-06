@@ -20,13 +20,24 @@ from .checks.base import CheckResult
 def score_episode(results: list[CheckResult], cfg: dict | None = None) -> dict:
     """results: 一个 episode 的所有 CheckResult。返回 {label, reasons}。
 
-    v1（仅 hard-validity）：任一 hard_fail → drop（附原因）；否则 keep_high_quality。
-    quality 分层（downweight/review）待接入 quality 检查（motion/video）后再补。
+    任一 hard_fail → drop；quality flags 按透明规则分到 review/downweight。
     """
+    cfg = cfg or {}
     hard = [r for r in results if r.hard_fail()]
     if hard:
         return {
             "label": "drop",
             "reasons": [{"check": r.name, "flags": r.flags} for r in hard],
         }
+
+    quality = [r for r in results if r.flags and not r.hard_fail()]
+    reasons = [{"check": r.name, "flags": r.flags} for r in quality]
+    n_flags = sum(len(r.flags) for r in quality)
+    decision = cfg.get("decision", {})
+    review_at = int(decision.get("review_when_quality_flags_ge", 2))
+
+    if n_flags >= review_at:
+        return {"label": "review", "reasons": reasons}
+    if n_flags > 0:
+        return {"label": "keep_with_downweight", "reasons": reasons}
     return {"label": "keep_high_quality", "reasons": []}

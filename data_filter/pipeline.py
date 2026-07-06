@@ -16,6 +16,7 @@ from .checks.attrs import check_attrs
 from .checks.base import CheckResult
 from .checks.gripper import check_gripper
 from .checks.modality import check_modality_lengths
+from .checks.motion import check_motion_quality
 from .checks.rot6d import check_rot6d
 from .checks.timestamp import check_timestamp
 from .checks.validity import check_finite, check_schema_shape
@@ -29,6 +30,11 @@ from .scoring import score_episode
 def _enabled(cfg: dict, key: str) -> bool:
     """检查是否启用（cfg["hard_checks"][key]，缺省 True）。"""
     return cfg.get("hard_checks", {}).get(key, True)
+
+
+def _quality_enabled(cfg: dict, key: str) -> bool:
+    """quality 检查是否启用（cfg["quality_checks"][key]，缺省 False）。"""
+    return cfg.get("quality_checks", {}).get(key, False)
 
 
 def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
@@ -59,6 +65,8 @@ def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
             results.append(check_rot6d(ep.qpos[:, schema.RIGHT_ROT6D], rot_cfg, name="rot6d_right"))
         if _enabled(cfg, "gripper") and ep.gripper is not None:
             results.append(check_gripper(ep.gripper, ep.attrs, thr.get("gripper", {})))
+        if _quality_enabled(cfg, "motion"):
+            results.append(check_motion_quality(ep.qpos, thr.get("motion", {})))
 
     if _enabled(cfg, "attrs"):
         results.append(check_attrs(ep.attrs, ep.source_kind, {}))

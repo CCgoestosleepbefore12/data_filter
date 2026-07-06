@@ -32,6 +32,14 @@ def test_score_hard_fail_drops_with_reason():
     assert "missing:domain_name" in out["reasons"][0]["flags"]
 
 
+def test_score_quality_flags_downweights_or_reviews():
+    one = [CheckResult("motion", passed=True, severity="warn", flags=["long_static"])]
+    assert score_episode(one, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "keep_with_downweight"
+
+    two = [CheckResult("motion", passed=True, severity="warn", flags=["long_static", "low_gripper_coverage"])]
+    assert score_episode(two, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
+
+
 # ------------------------- 端到端 -------------------------
 def test_processed_gate_end_to_end(tmp_path):
     # 1 个好 episode
@@ -74,3 +82,9 @@ def test_write_report_outputs(tmp_path):
     drops = open(out["drop_list"], encoding="utf-8").read().split()
     assert any(d.endswith("bad.hdf5") for d in drops)
     assert not any(d.endswith("good.hdf5") for d in drops)
+
+    # v1 输出 score / split / sampling weight
+    assert "scores" in out and "sampling_weights" in out
+    assert (tmp_path / "out" / "keep_high_quality_list.txt").exists()
+    assert (tmp_path / "out" / "review_list.txt").exists()
+    assert (tmp_path / "out" / "downweight_list.txt").exists()

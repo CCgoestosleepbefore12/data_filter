@@ -1,8 +1,8 @@
-"""报告产出：per-episode JSON + 可读 markdown + drop-list。
+"""报告产出：per-episode JSON + 可读 markdown + split lists。
 
 产物（见 spec.md §决策与输出）：
-- processed 阶段: processed_validity_report.json/md、drop_list.txt。
-  （episode_scores.jsonl / downweight / sampling_weights 待 quality 检查接入后补。）
+- processed 阶段: processed_validity_report.json/md、episode_scores.jsonl、
+  keep/downweight/review/drop lists、sampling_weights.json。
 """
 
 from __future__ import annotations
@@ -26,11 +26,63 @@ def write_report(report: dict, out_dir: str, prefix: str = "processed_validity")
     with open(drop_path, "w", encoding="utf-8") as f:
         f.write("\n".join(drops) + ("\n" if drops else ""))
 
+    list_paths = {"drop_list": drop_path}
+    label_to_file = {
+        "keep_high_quality": "keep_high_quality_list.txt",
+        "keep_with_downweight": "downweight_list.txt",
+        "review": "review_list.txt",
+    }
+    for label, filename in label_to_file.items():
+        path = os.path.join(out_dir, filename)
+        rows = [e["path"] for e in episodes if e.get("label") == label]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(rows) + ("\n" if rows else ""))
+        list_paths[filename.removesuffix(".txt")] = path
+
+    scores_path = os.path.join(out_dir, "episode_scores.jsonl")
+    with open(scores_path, "w", encoding="utf-8") as f:
+        for e in episodes:
+            f.write(json.dumps(_score_row(e), ensure_ascii=False) + "\n")
+
+    weights = {
+        e["path"]: _sampling_weight(e.get("label", "drop"))
+        for e in episodes
+        if e.get("label") != "drop"
+    }
+    weights_path = os.path.join(out_dir, "sampling_weights.json")
+    with open(weights_path, "w", encoding="utf-8") as f:
+        json.dump(weights, f, ensure_ascii=False, indent=2)
+
     md_path = os.path.join(out_dir, f"{prefix}_report.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(_render_md(summary, episodes))
 
-    return {"json": json_path, "md": md_path, "drop_list": drop_path}
+    return {
+        "json": json_path,
+        "md": md_path,
+        "scores": scores_path,
+        "sampling_weights": weights_path,
+        **list_paths,
+    }
+
+
+def _sampling_weight(label: str) -> float:
+    if label == "keep_high_quality":
+        return 1.0
+    if label == "keep_with_downweight":
+        return 0.5
+    if label == "review":
+        return 0.0
+    return 0.0
+
+
+def _score_row(e: dict) -> dict:
+    return {
+        "path": e.get("path"),
+        "source_kind": e.get("source_kind"),
+        "label": e.get("label"),
+        "reasons": e.get("reasons", []),
+    }
 
 
 def _render_md(summary: dict, episodes: list) -> str:

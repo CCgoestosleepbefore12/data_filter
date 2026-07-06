@@ -39,6 +39,8 @@ thresholds:
   motion:
     jerk_sigma: 6.0
     static_min_frames: 45
+    static_speed_eps: 1.0e-5
+    min_gripper_changes: 1
     speed_hi_pct: 99     # 速度分布高分位，供速度对齐参考
   video_quality:
     black_luma: 8.0
