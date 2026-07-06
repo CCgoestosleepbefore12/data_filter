@@ -23,6 +23,7 @@ thresholds:
     residual_sigma: 6.0
     accel_sigma: 6.0
     jerk_sigma: 6.0
+    min_spike_frames: 200      # 按真实分布校准：只标明显异常段
   extreme:
     alpha: 1.5
     use_velocity: false
