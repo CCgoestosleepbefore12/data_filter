@@ -4,8 +4,6 @@
 - pika_umi: pose_frame / tip2base_applied / relative_to_first_frame / domain_name / time_alignment_status
 - nas_teleop: domain_name / source_key / time_alignment_status
 缺失或不符 → hard_fail。
-
-TODO(milestone 2): /tdd 实现。
 """
 
 from __future__ import annotations

@@ -6,10 +6,8 @@ hard-validity 失败直接 drop/block（不进打分）。
 决策标签（见 spec.md §决策与输出）：
     keep_high_quality | keep_with_downweight | review | drop
 
-第一版建议用**透明规则分级**（任一 hard fail → drop；≥N 项 quality flag → review；
-否则 keep），不塌成手调权重标量——待有校准数据后再引入加权分。
-
-TODO(milestone 6): 实现规则分级 + source-level 分布 + 阈值建议。
+用**透明规则分级**（任一 hard fail → drop；命中 ≥N 个 quality 检查或 REVIEW_FLAGS
+→ review；否则 keep），不塌成手调权重标量——待有校准数据后再引入加权分。
 """
 
 from __future__ import annotations

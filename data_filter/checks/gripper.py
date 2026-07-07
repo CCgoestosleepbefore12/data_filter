@@ -1,10 +1,8 @@
 """夹爪语义检查（processed，hard-validity）。
 
 processed qpos 的夹爪维（LEFT_GRIP=9, RIGHT_GRIP=19）应为二值，positive=closed。
-检查：unique(值) ⊆ {0,1}（或阈值化后二值）、attrs gripper_positive 语义、
-开合翻转（正负约定搞反）、二值化 threshold 合理性。
-
-TODO(milestone 2): /tdd 实现。
+检查：finite、值域 [0,1]、二值（贴近 0/1）。正负翻转（positive=closed 反了）
+需语义参照，v1 不查。
 """
 
 from __future__ import annotations

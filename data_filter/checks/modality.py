@@ -2,8 +2,6 @@
 
 各相机帧数、pose/qpos、gripper、timestamps 的 T 必须一致；
 不一致往往是采集/同步 bug。hard-validity：不一致 → hard_fail。
-
-TODO(milestone 2): /tdd 实现。
 """
 
 from __future__ import annotations

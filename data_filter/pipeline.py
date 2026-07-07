@@ -1,8 +1,8 @@
 """编排：遍历 episode → 跑 checks → 决策 → 写 report/drop-list。
 
 两道闸门：
-- Raw quality gate（待 milestone 3）：raw pika/teleop → 明显坏采集 drop / review。
-- Processed XVLA quality gate：hard-validity → 通过后（quality scoring 待补）。
+- Raw quality gate：raw pika/teleop → 明显坏采集 drop / review。
+- Processed XVLA quality gate：hard-validity → 通过后 quality scoring 分级。
 
 不重写 HDF5：只输出 report + drop-list。
 """

@@ -1,8 +1,6 @@
 """配置加载：按源分离的 YAML（configs/raw_pika|raw_teleop|processed_xvla.yaml）。
 
 阈值全部为 provisional，待真实分布与 review 队列校准。
-
-TODO(milestone 2+): 实现 load / 校验 / 默认值合并。
 """
 
 from __future__ import annotations

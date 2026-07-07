@@ -1,9 +1,9 @@
-"""结构性 hard-validity 检查：schema/shape 与 finite。
+"""结构性 hard-validity 检查。
 
-- check_schema_shape: qpos 必须 (T, 20)。
-- check_finite:       qpos/action/timestamps 无 NaN/Inf。
-
-TODO(milestone 2): /tdd 实现。
+- check_schema_shape:  qpos 必须 (T, 20) 且 ≥ min_length 帧。
+- check_finite:        数组无 NaN/Inf；非数值 dtype 也判失败。
+- check_min_length:    episode 帧数 ≥ min_length。
+- check_required_keys: 必需字段/模态存在。
 """
 
 from __future__ import annotations
