@@ -11,10 +11,10 @@ data_roots:
 checks:
   spike: true            # S1 突变（qpos/action/eef）
   tracking: false        # 非 lighthouse，不适用
-  extreme: true          # S3 极值（绝对值可用）
+  extreme: false         # 待实现：S3 极值（绝对值可用）
   timestamp: true        # 时间戳/丢帧（含 eef_left/right_time 同步）
   modality: true         # 模态长度一致
-  video_quality: true    # C3 黑/糊/静止
+  video_quality: false   # 待实现：C3 黑/糊/静止
   state_action: false    # S2 qpos vs action 趋势对齐（遥操适用，但 v1 后置，见 spec §8）
   arm_activity: true     # 单臂信号冻结/缺失
 

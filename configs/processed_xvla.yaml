@@ -24,9 +24,9 @@ hard_checks:
 # quality 检查（出 score/flag，不 hard drop）
 quality_checks:
   motion: true           # 速度/加速度/jerk/长静止/过快
-  video_quality: true    # 模糊/黑帧比例
-  coverage: true         # 操作阶段 / 夹爪动作覆盖
-  multicam: true         # 多相机可用性
+  video_quality: false   # 待实现：模糊/黑帧比例
+  coverage: false        # 待实现：操作阶段 / 夹爪动作覆盖
+  multicam: false        # 待实现：多相机可用性
 
 # provisional 阈值
 thresholds:

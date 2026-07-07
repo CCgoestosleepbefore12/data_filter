@@ -132,10 +132,19 @@ def make_raw_pika_hdf5(path, T: int = 12, *, pose: np.ndarray | None = None) -> 
     return str(path)
 
 
-def make_raw_teleop_hdf5(path, T: int = 12) -> str:
+def make_raw_teleop_hdf5(
+    path,
+    T: int = 12,
+    *,
+    qpos: np.ndarray | None = None,
+    right_time: np.ndarray | None = None,
+    with_right_time: bool = True,
+) -> str:
     idx = np.arange(T, dtype=np.float32)
-    qpos = np.stack([0.01 * idx for _ in range(14)], axis=1).astype(np.float32)
+    if qpos is None:
+        qpos = np.stack([0.01 * idx for _ in range(14)], axis=1).astype(np.float32)
     action = qpos.copy()
+    rt = right_time if right_time is not None else np.arange(T, dtype=np.float32) / 30.0
     with h5py.File(path, "w") as h:
         h.attrs["sim"] = False
         h.create_dataset("action", data=action)
@@ -146,6 +155,7 @@ def make_raw_teleop_hdf5(path, T: int = 12) -> str:
         h.create_dataset("observations/eef_6d", data=np.zeros((T, 20), dtype=np.float32))
         h.create_dataset("observations/eef_quaternion", data=np.zeros((T, 16), dtype=np.float32))
         h.create_dataset("observations/eef_left_time", data=np.arange(T, dtype=np.float32) / 30.0)
-        h.create_dataset("observations/eef_right_time", data=np.arange(T, dtype=np.float32) / 30.0)
+        if with_right_time:
+            h.create_dataset("observations/eef_right_time", data=np.asarray(rt, dtype=np.float32))
         _write_vlen_images(h, T)
     return str(path)

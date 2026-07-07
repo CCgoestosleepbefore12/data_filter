@@ -1,9 +1,7 @@
 """时间戳检查（raw + processed 通用）。
 
 判据：单调递增（dt>0）为 hard-validity；异常大跳变作为 quality flag。
-多时钟同步偏差（遥操 eef_left/right_time）留待 raw teleop 阶段。
-
-TODO(raw 阶段): 多时钟同步偏差。
+多时钟同步偏差用于 raw teleop 的 eef_left/right_time 质量检查。
 """
 
 from __future__ import annotations
@@ -40,4 +38,37 @@ def check_timestamp(ts: np.ndarray, cfg: dict, name: str = "timestamp") -> Check
         severity="warn" if quality_flags else "info",
         metrics=metrics,
         flags=quality_flags,
+    )
+
+
+def check_clock_skew(
+    reference_ts: np.ndarray,
+    other_ts: np.ndarray,
+    cfg: dict,
+    name: str = "timestamp_skew",
+) -> CheckResult:
+    """检查两路同源时钟是否同步。超阈值作为 quality flag，非数值/空数组 hard fail。"""
+    ref = np.asarray(reference_ts, dtype=np.float64)
+    other = np.asarray(other_ts, dtype=np.float64)
+    n = min(ref.size, other.size)
+    if n == 0:
+        return CheckResult.hard(name, False, metrics={"n": int(n)}, flags=["missing"])
+    if not np.all(np.isfinite(ref[:n])) or not np.all(np.isfinite(other[:n])):
+        return CheckResult.hard(name, False, metrics={"n": int(n)}, flags=["nan_inf"])
+
+    skew = np.abs(ref[:n] - other[:n])
+    max_skew = float(np.max(skew)) if skew.size else 0.0
+    threshold = float(cfg.get("max_clock_skew_s", 0.05))
+    flags = ["clock_skew"] if max_skew > threshold else []
+    return CheckResult(
+        name=name,
+        passed=True,
+        severity="warn" if flags else "info",
+        metrics={
+            "n": int(n),
+            "max_clock_skew_s": max_skew,
+            "median_clock_skew_s": float(np.median(skew)) if skew.size else 0.0,
+            "threshold_s": threshold,
+        },
+        flags=flags,
     )

@@ -35,7 +35,12 @@ def check_spike(signal: np.ndarray, cfg: dict) -> CheckResult:
     def limit(v: np.ndarray) -> float:
         med = float(np.median(v)) if v.size else 0.0
         mad = float(np.median(np.abs(v - med))) if v.size else 0.0
-        return med + k * 1.4826 * mad if mad > 1e-12 else float(v.max() if v.size else 0.0)
+        if mad > 1e-12:
+            return med + k * 1.4826 * mad
+        std = float(np.std(v)) if v.size else 0.0
+        if std > 1e-12:
+            return med + float(cfg.get("fallback_sigma", 3.0)) * std
+        return med + float(cfg.get("absolute_eps", 1e-12))
 
     accel_lim = limit(accel_mag)
     jerk_lim = limit(jerk_mag)

@@ -17,14 +17,17 @@ from ..io import schema
 from .base import CheckResult
 
 
-def _robust_limit(values: np.ndarray, k: float) -> float:
-    """median + k * MAD，MAD 退化时回退到 max。"""
+def _robust_limit(values: np.ndarray, k: float, fallback_sigma: float = 3.0) -> float:
+    """median + k * MAD；MAD 退化时用 std 兜底，避免单点异常把阈值抬到 max。"""
     if values.size == 0:
         return 0.0
     med = float(np.median(values))
     mad = float(np.median(np.abs(values - med)))
     if mad <= 1e-12:
-        return float(values.max())
+        std = float(np.std(values))
+        if std > 1e-12:
+            return med + fallback_sigma * std
+        return med + 1e-12
     return med + k * 1.4826 * mad
 
 
@@ -45,6 +48,7 @@ def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> C
         return CheckResult(name=name, passed=True, severity="warn", flags=["too_short"])
 
     k = float(cfg.get("robust_sigma", cfg.get("jerk_sigma", 6.0)))
+    fallback_sigma = float(cfg.get("fallback_sigma", 3.0))
     static_min_frames = int(cfg.get("static_min_frames", 45))
     static_speed_eps = float(cfg.get("static_speed_eps", 1e-5))
     min_gripper_changes = int(cfg.get("min_gripper_changes", 1))
@@ -58,9 +62,9 @@ def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> C
     accel = np.diff(speed)                                # (T-2,)
     jerk = np.diff(accel)                                 # (T-3,)
 
-    speed_limit = _robust_limit(speed, k)
+    speed_limit = _robust_limit(speed, k, fallback_sigma=fallback_sigma)
     jerk_abs = np.abs(jerk)
-    jerk_limit = _robust_limit(jerk_abs, k)
+    jerk_limit = _robust_limit(jerk_abs, k, fallback_sigma=fallback_sigma)
     speed_fast = speed > speed_limit if speed_limit > 0 else np.zeros_like(speed, dtype=bool)
     jerk_spike = jerk_abs > jerk_limit if jerk_limit > 0 else np.zeros_like(jerk_abs, dtype=bool)
     static_run = _longest_true_run(speed <= static_speed_eps)

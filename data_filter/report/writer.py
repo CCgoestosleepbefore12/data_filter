@@ -22,24 +22,24 @@ def write_report(report: dict, out_dir: str, prefix: str = "processed_validity")
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     drops = [e["path"] for e in episodes if e.get("label") == "drop"]
-    drop_path = os.path.join(out_dir, "drop_list.txt")
+    drop_path = os.path.join(out_dir, f"{prefix}_drop_list.txt")
     with open(drop_path, "w", encoding="utf-8") as f:
         f.write("\n".join(drops) + ("\n" if drops else ""))
 
     list_paths = {"drop_list": drop_path}
     label_to_file = {
-        "keep_high_quality": "keep_high_quality_list.txt",
-        "keep_with_downweight": "downweight_list.txt",
-        "review": "review_list.txt",
+        "keep_high_quality": ("keep_high_quality_list", f"{prefix}_keep_high_quality_list.txt"),
+        "keep_with_downweight": ("downweight_list", f"{prefix}_downweight_list.txt"),
+        "review": ("review_list", f"{prefix}_review_list.txt"),
     }
-    for label, filename in label_to_file.items():
+    for label, (key, filename) in label_to_file.items():
         path = os.path.join(out_dir, filename)
         rows = [e["path"] for e in episodes if e.get("label") == label]
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(rows) + ("\n" if rows else ""))
-        list_paths[filename.removesuffix(".txt")] = path
+        list_paths[key] = path
 
-    scores_path = os.path.join(out_dir, "episode_scores.jsonl")
+    scores_path = os.path.join(out_dir, f"{prefix}_episode_scores.jsonl")
     with open(scores_path, "w", encoding="utf-8") as f:
         for e in episodes:
             f.write(json.dumps(_score_row(e), ensure_ascii=False) + "\n")
@@ -47,15 +47,15 @@ def write_report(report: dict, out_dir: str, prefix: str = "processed_validity")
     weights = {
         e["path"]: _sampling_weight(e.get("label", "drop"))
         for e in episodes
-        if e.get("label") != "drop"
+        if e.get("label") in {"keep_high_quality", "keep_with_downweight"}
     }
-    weights_path = os.path.join(out_dir, "sampling_weights.json")
+    weights_path = os.path.join(out_dir, f"{prefix}_sampling_weights.json")
     with open(weights_path, "w", encoding="utf-8") as f:
         json.dump(weights, f, ensure_ascii=False, indent=2)
 
     md_path = os.path.join(out_dir, f"{prefix}_report.md")
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write(_render_md(summary, episodes))
+        f.write(_render_md(summary, episodes, title=_title_from_prefix(prefix)))
 
     return {
         "json": json_path,
@@ -85,8 +85,16 @@ def _score_row(e: dict) -> dict:
     }
 
 
-def _render_md(summary: dict, episodes: list) -> str:
-    lines = ["# Processed validity report", ""]
+def _title_from_prefix(prefix: str) -> str:
+    if prefix.startswith("raw"):
+        return "Raw quality report"
+    if prefix.startswith("processed"):
+        return "Processed validity report"
+    return f"{prefix} report"
+
+
+def _render_md(summary: dict, episodes: list, title: str = "Processed validity report") -> str:
+    lines = [f"# {title}", ""]
     lines.append(f"- 总数: {summary.get('total', len(episodes))}")
     for label, n in sorted(summary.get("by_label", {}).items()):
         lines.append(f"- {label}: {n}")

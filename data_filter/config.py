@@ -18,4 +18,4 @@ def load_config(name: str) -> dict:
     """name: "raw_pika" | "raw_teleop" | "processed_xvla"。返回该源的配置 dict。"""
     path = CONFIG_DIR / f"{name}.yaml"
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}

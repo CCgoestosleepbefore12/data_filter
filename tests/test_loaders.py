@@ -67,4 +67,4 @@ def test_load_raw_teleop(tmp_path):
     assert ep.qpos.shape == (11, 14)
     assert ep.action.shape == (11, 14)
     assert ep.timestamps.shape == (11,)
-    assert ep.attrs["eef_right_time_length"] == 11
+    assert ep.extra_timestamps["eef_right_time"].shape == (11,)

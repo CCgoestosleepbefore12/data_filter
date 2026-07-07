@@ -31,6 +31,7 @@ class EpisodeSignals:
     qpos: Optional[np.ndarray] = None        # (T, D)
     gripper: Optional[np.ndarray] = None     # (T,) 或 (T, n_arm)
     timestamps: Optional[np.ndarray] = None  # (T,)
+    extra_timestamps: dict[str, np.ndarray] = field(default_factory=dict)  # 其他同源时钟
     attrs: dict = field(default_factory=dict)     # HDF5/dataset attrs
     image_keys: tuple[str, ...] = ()              # 图像 dataset 名
     image_lengths: dict = field(default_factory=dict)  # {image_key: T}
@@ -141,8 +142,9 @@ def load_raw_teleop(path: str) -> EpisodeSignals:
             else None
         )
         attrs = {k: _to_py(v) for k, v in h.attrs.items()}
+        extra_timestamps = {}
         if schema.RAW_TELEOP["eef_time"][1] in h:
-            attrs["eef_right_time_length"] = int(h[schema.RAW_TELEOP["eef_time"][1]].shape[0])
+            extra_timestamps["eef_right_time"] = h[schema.RAW_TELEOP["eef_time"][1]][:]
         image_keys, image_lengths = _collect_image_lengths(h)
 
     return EpisodeSignals(
@@ -152,6 +154,7 @@ def load_raw_teleop(path: str) -> EpisodeSignals:
         qpos=qpos,
         action=action,
         timestamps=timestamps,
+        extra_timestamps=extra_timestamps,
         attrs=attrs,
         image_keys=image_keys,
         image_lengths=image_lengths,

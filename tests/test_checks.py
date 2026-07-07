@@ -11,6 +11,7 @@ from data_filter.checks.motion import check_motion_quality
 from data_filter.checks.raw_activity import check_bimanual_activity
 from data_filter.checks.rot6d import check_rot6d
 from data_filter.checks.spike import check_spike
+from data_filter.checks.timestamp import check_clock_skew
 from data_filter.checks.tracking import check_tracking
 from data_filter.checks.validity import check_finite, check_schema_shape
 from data_filter.io import schema
@@ -33,6 +34,12 @@ def test_finite():
     q[3, 5] = np.nan
     r = check_finite({"qpos": q}, CFG)
     assert r.hard_fail() and any("qpos" in f for f in r.flags)
+
+
+def test_finite_flags_nonnumeric_without_exception():
+    r = check_finite({"qpos": np.asarray([["bad"]], dtype=object)}, CFG)
+    assert r.hard_fail()
+    assert "nonnumeric:qpos" in r.flags
 
 
 # ------------------------- modality -------------------------
@@ -150,6 +157,24 @@ def test_spike_flags_large_jump():
     r = check_spike(signal, {"min_spike_frames": 1})
     assert r.passed
     assert "spike" in r.flags
+
+
+def test_spike_mad_fallback_catches_single_clean_jump():
+    signal = np.zeros((60, 3), dtype=np.float32)
+    signal[:, 0] = np.linspace(0, 0.1, 60)
+    signal[30, 0] += 0.5
+    r = check_spike(signal, {"min_spike_frames": 1, "fallback_sigma": 3.0})
+    assert r.passed
+    assert "spike" in r.flags
+
+
+def test_clock_skew_flags_unsynced_time_axis():
+    left = np.arange(20, dtype=np.float32) / 30.0
+    right = left.copy()
+    right[5:] += 0.2
+    r = check_clock_skew(left, right, {"max_clock_skew_s": 0.05})
+    assert r.passed
+    assert "clock_skew" in r.flags
 
 
 def test_bimanual_activity_flags_frozen_right_arm():

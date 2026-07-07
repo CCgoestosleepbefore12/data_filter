@@ -38,7 +38,13 @@ def test_score_quality_flags_downweights_or_reviews():
     assert score_episode(one, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "keep_with_downweight"
 
     two = [CheckResult("motion", passed=True, severity="warn", flags=["long_static", "low_gripper_coverage"])]
-    assert score_episode(two, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
+    assert score_episode(two, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "keep_with_downweight"
+
+    two_checks = [
+        CheckResult("motion", passed=True, severity="warn", flags=["long_static"]),
+        CheckResult("timestamp", passed=True, severity="warn", flags=["dt_jump"]),
+    ]
+    assert score_episode(two_checks, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
 
     frozen = [CheckResult("arm_activity", passed=True, severity="warn", flags=["right_arm_frozen"])]
     assert score_episode(frozen, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
@@ -89,9 +95,9 @@ def test_write_report_outputs(tmp_path):
 
     # v1 输出 score / split / sampling weight
     assert "scores" in out and "sampling_weights" in out
-    assert (tmp_path / "out" / "keep_high_quality_list.txt").exists()
-    assert (tmp_path / "out" / "review_list.txt").exists()
-    assert (tmp_path / "out" / "downweight_list.txt").exists()
+    assert (tmp_path / "out" / "processed_validity_keep_high_quality_list.txt").exists()
+    assert (tmp_path / "out" / "processed_validity_review_list.txt").exists()
+    assert (tmp_path / "out" / "processed_validity_downweight_list.txt").exists()
 
 
 def test_raw_gate_pika_end_to_end(tmp_path):
@@ -111,3 +117,34 @@ def test_raw_gate_teleop_end_to_end(tmp_path):
     assert report["summary"]["total"] == 1
     names = {c["name"] for c in report["episodes"][0]["checks"]}
     assert {"finite", "modality", "timestamp", "spike", "arm_activity"}.issubset(names)
+
+
+def test_raw_gate_teleop_checks_right_arm_time_axis(tmp_path):
+    right_time = np.arange(20, dtype=np.float32) / 30.0
+    right_time[10:] += 0.2
+    make_raw_teleop_hdf5(tmp_path / "raw.hdf5", T=20, right_time=right_time)
+
+    report = run_raw_gate(str(tmp_path), "teleop", {"checks": {"timestamp": True, "spike": False}})
+    ep = report["episodes"][0]
+    names = {c["name"] for c in ep["checks"]}
+    assert "eef_right_time" in names
+    assert any(c["name"] == "timestamp_skew" and "clock_skew" in c["flags"] for c in ep["checks"])
+
+
+def test_raw_gate_teleop_requires_right_arm_time_axis(tmp_path):
+    make_raw_teleop_hdf5(tmp_path / "raw.hdf5", T=20, with_right_time=False)
+
+    report = run_raw_gate(str(tmp_path), "teleop", {"checks": {"timestamp": True, "spike": False}})
+    ep = report["episodes"][0]
+    assert ep["label"] == "drop"
+    assert any(r["check"] == "eef_right_time" and "missing" in r["flags"] for r in ep["reasons"])
+
+
+def test_processed_gate_keeps_running_after_check_exception_shape_edge(tmp_path):
+    make_processed_hdf5(tmp_path / "empty.hdf5", T=0, source="pika_umi")
+    make_processed_hdf5(tmp_path / "good.hdf5", T=6, source="pika_umi")
+
+    report = run_processed_gate(str(tmp_path))
+    labels = {e["path"].split("/")[-1]: e["label"] for e in report["episodes"]}
+    assert labels["empty.hdf5"] == "drop"
+    assert labels["good.hdf5"] == "keep_high_quality"

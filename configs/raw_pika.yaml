@@ -13,11 +13,12 @@ data_roots:
 checks:
   spike: true            # S1 突变
   tracking: true         # S1' lighthouse 丢跟踪（pika 关键）
-  extreme: true          # S3 极值（pika 用速度/delta）
+  extreme: false         # 待实现：S3 极值（pika 用速度/delta）
   timestamp: true        # 时间戳/丢帧
   modality: true         # 模态长度一致
-  video_quality: true    # C3 黑/糊/静止
+  video_quality: false   # 待实现：C3 黑/糊/静止
   state_action: false    # pika 无独立 action，不适用
+  arm_activity: false    # pika v1 暂不启用单臂冻结评分
 
 # provisional 阈值
 thresholds:
