@@ -17,7 +17,7 @@ def check_bimanual_activity(signal: np.ndarray, cfg: dict, name: str = "arm_acti
     if x.ndim != 2 or x.shape[1] < 2 or x.shape[0] < 2:
         return CheckResult(name=name, passed=True, severity="warn", flags=["too_short"])
     if not np.all(np.isfinite(x)):
-        return CheckResult.hard(name, False, flags=["nan_inf"])
+        return CheckResult.hard(name, False, flags=["nonfinite"])
 
     mid = x.shape[1] // 2
     min_unique_rows = int(cfg.get("min_unique_rows", 3))

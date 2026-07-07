@@ -20,7 +20,7 @@ def check_spike(signal: np.ndarray, cfg: dict) -> CheckResult:
     if x.ndim != 2 or x.shape[0] < 4:
         return CheckResult(name="spike", passed=True, severity="warn", flags=["too_short"])
     if not np.all(np.isfinite(x)):
-        return CheckResult.hard("spike", False, flags=["nan_inf"])
+        return CheckResult.hard("spike", False, flags=["nonfinite"])
 
     k = float(cfg.get("jerk_sigma", cfg.get("accel_sigma", cfg.get("residual_sigma", 6.0))))
     min_frames = int(cfg.get("min_spike_frames", 3))

@@ -22,7 +22,7 @@ def check_gripper(gripper: np.ndarray, attrs: dict, cfg: dict, name: str = "grip
     g = np.asarray(gripper, dtype=np.float64)
     tol = cfg.get("binary_tol", 1e-3)
     if not np.all(np.isfinite(g)):
-        return CheckResult.hard(name, False, flags=["nan_inf"])
+        return CheckResult.hard(name, False, flags=["nonfinite"])
 
     gmin, gmax = float(g.min()), float(g.max())
     in_range = gmin >= -tol and gmax <= 1.0 + tol

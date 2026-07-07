@@ -27,7 +27,7 @@ def check_tracking(pose: np.ndarray, cfg: dict) -> CheckResult:
             severity="hard_fail",
             frame_mask=~finite_rows,
             metrics={"nan_frames": int(np.count_nonzero(~finite_rows))},
-            flags=["nan_inf"],
+            flags=["nonfinite"],
         )
 
     pos = x[:, :3]

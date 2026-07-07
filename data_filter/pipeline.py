@@ -69,8 +69,8 @@ def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
         else:
             results.append(check_timestamp(ep.timestamps, thr.get("timestamp", {})))
 
-    # 形状合法才切 rot6d/gripper
-    if ep.qpos.ndim == 2 and ep.qpos.shape[1] >= schema.QPOS_DIM:
+    # 形状和帧数合法才切 rot6d/gripper；结构性失败后短路，避免空数组 max/min 异常。
+    if ep.qpos.ndim == 2 and ep.qpos.shape[1] >= schema.QPOS_DIM and ep.qpos.shape[0] >= 1:
         if _enabled(cfg, "rot6d"):
             rot_cfg = thr.get("rot6d", {})
             results.append(check_rot6d(ep.qpos[:, schema.LEFT_ROT6D], rot_cfg, name="rot6d_left"))

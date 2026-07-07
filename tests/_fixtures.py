@@ -137,12 +137,22 @@ def make_raw_teleop_hdf5(
     T: int = 12,
     *,
     qpos: np.ndarray | None = None,
+    freeze_arm: str | None = None,
     right_time: np.ndarray | None = None,
     with_right_time: bool = True,
 ) -> str:
     idx = np.arange(T, dtype=np.float32)
     if qpos is None:
         qpos = np.stack([0.01 * idx for _ in range(14)], axis=1).astype(np.float32)
+    if freeze_arm is not None:
+        qpos = qpos.copy()
+        mid = qpos.shape[1] // 2
+        if freeze_arm == "left":
+            qpos[:, :mid] = qpos[0, :mid]
+        elif freeze_arm == "right":
+            qpos[:, mid:] = qpos[0, mid:]
+        else:
+            raise ValueError(f"unknown freeze_arm: {freeze_arm}")
     action = qpos.copy()
     rt = right_time if right_time is not None else np.arange(T, dtype=np.float32) / 30.0
     with h5py.File(path, "w") as h:

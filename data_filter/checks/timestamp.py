@@ -17,7 +17,7 @@ def check_timestamp(ts: np.ndarray, cfg: dict, name: str = "timestamp") -> Check
     if t.size < 2:
         return CheckResult(name, passed=True, severity="info", metrics={"n": int(t.size)})
     if not np.all(np.isfinite(t)):
-        return CheckResult.hard(name, False, flags=["nan_inf"])
+        return CheckResult.hard(name, False, flags=["nonfinite"])
 
     dt = np.diff(t)                                        # (T-1,)
     med = float(np.median(dt))
@@ -54,7 +54,7 @@ def check_clock_skew(
     if n == 0:
         return CheckResult.hard(name, False, metrics={"n": int(n)}, flags=["missing"])
     if not np.all(np.isfinite(ref[:n])) or not np.all(np.isfinite(other[:n])):
-        return CheckResult.hard(name, False, metrics={"n": int(n)}, flags=["nan_inf"])
+        return CheckResult.hard(name, False, metrics={"n": int(n)}, flags=["nonfinite"])
 
     skew = np.abs(ref[:n] - other[:n])
     max_skew = float(np.max(skew)) if skew.size else 0.0

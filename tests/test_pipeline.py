@@ -140,6 +140,19 @@ def test_raw_gate_teleop_requires_right_arm_time_axis(tmp_path):
     assert any(r["check"] == "eef_right_time" and "missing" in r["flags"] for r in ep["reasons"])
 
 
+def test_raw_gate_teleop_reviews_frozen_right_arm_regression(tmp_path):
+    make_raw_teleop_hdf5(tmp_path / "episode_2030.hdf5", T=20, freeze_arm="right")
+
+    report = run_raw_gate(
+        str(tmp_path),
+        "teleop",
+        {"checks": {"timestamp": True, "spike": False, "arm_activity": True}},
+    )
+    ep = report["episodes"][0]
+    assert ep["label"] == "review"
+    assert any(r["check"] == "arm_activity" and "right_arm_frozen" in r["flags"] for r in ep["reasons"])
+
+
 def test_processed_gate_keeps_running_after_check_exception_shape_edge(tmp_path):
     make_processed_hdf5(tmp_path / "empty.hdf5", T=0, source="pika_umi")
     make_processed_hdf5(tmp_path / "good.hdf5", T=6, source="pika_umi")
@@ -148,3 +161,6 @@ def test_processed_gate_keeps_running_after_check_exception_shape_edge(tmp_path)
     labels = {e["path"].split("/")[-1]: e["label"] for e in report["episodes"]}
     assert labels["empty.hdf5"] == "drop"
     assert labels["good.hdf5"] == "keep_high_quality"
+    empty = next(e for e in report["episodes"] if e["path"].endswith("empty.hdf5"))
+    assert any(r["check"] == "schema_shape" and "too_short" in r["flags"] for r in empty["reasons"])
+    assert not any(r["check"] == "check_exception" for r in empty["reasons"])

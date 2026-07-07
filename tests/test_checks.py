@@ -138,7 +138,7 @@ def test_tracking_flags_nan_as_hard_fail():
     pose[3, 0] = np.nan
     r = check_tracking(pose, {})
     assert r.hard_fail()
-    assert "nan_inf" in r.flags
+    assert "nonfinite" in r.flags
 
 
 def test_tracking_flags_teleport_as_quality():
