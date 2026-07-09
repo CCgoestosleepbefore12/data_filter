@@ -45,7 +45,7 @@ thresholds:
     min_jerk_outlier_frames: 200
     speed_hi_pct: 99     # 速度分布高分位，供速度对齐参考
   video_quality:
-    sample_frames: 16
+    sample_frames: 4
     black_luma: 8.0
     blur_var: 50.0
     static_min_frames: 45

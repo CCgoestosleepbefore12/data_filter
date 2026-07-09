@@ -29,6 +29,12 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
     state_delta = np.diff(q[: n + 1, :d], axis=0)
     action_sig = a[:n, :d]
 
+    max_points = int(cfg.get("max_points", 300))
+    if max_points > 0 and n > max_points:
+        idx = np.linspace(0, n - 1, max_points, dtype=int)
+        state_delta = state_delta[idx]
+        action_sig = action_sig[idx]
+
     smooth_window = int(cfg.get("smooth_window", 5))
     state_delta = _smooth(state_delta, smooth_window)
     action_sig = _smooth(action_sig, smooth_window)

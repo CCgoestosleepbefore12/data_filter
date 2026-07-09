@@ -36,7 +36,7 @@ thresholds:
   timestamp:
     max_dt_ratio: 3.0          # dt 相对中位数的最大倍率
   video_quality:
-    sample_frames: 16
+    sample_frames: 4
     black_luma: 8.0            # 平均亮度低于此判黑帧
     blur_var: 50.0             # 拉普拉斯方差低于此判模糊
     static_min_frames: 45      # 长静止段帧数（保留夹爪关键帧）

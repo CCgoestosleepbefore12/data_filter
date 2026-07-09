@@ -32,6 +32,7 @@ thresholds:
   state_action:
     da_threshold: 0.65         # 方向一致性阈值（论文 0.6~0.7）
     max_lag_frames: 15         # 允许的最大时滞
+    max_points: 300            # 长 episode 下采样，控制全量扫描成本
     smooth_window: 5
     active_eps: 1.0e-4
     min_active_ratio: 0.05
@@ -43,7 +44,7 @@ thresholds:
     min_mean_std: 1.0e-5
     unique_decimals: 6
   video_quality:
-    sample_frames: 16
+    sample_frames: 4
     black_luma: 8.0
     blur_var: 50.0
     static_min_frames: 45
