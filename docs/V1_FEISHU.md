@@ -28,6 +28,12 @@ HDF5 数据
   -> 输出 report / list / sampling weights
 ```
 
+V2 相比 V1 新增：
+
+- video quality 基础版：抽样检查黑帧、模糊、静止画面、解码失败。
+- S2 state-action trend alignment：检查 raw teleop 的 action 和 state change 趋势是否对齐。
+- 报告可读性升级：Markdown 报告新增 `Top Reasons` 和 `Top Check Flags`。
+
 ## 3. 当前版本已经能查什么
 
 ### Raw 数据
@@ -60,7 +66,7 @@ HDF5 数据
 | `video_quality(cam_*_blur)` | 抽样图像计算 Laplacian 方差，低于 `blur_var` 的比例超过阈值 | 对应相机画面模糊 |
 | `video_quality(cam_*_static)` | 计算相邻抽样帧平均差分，连续低于 `static_diff_eps` 的帧数超过阈值 | 对应相机画面长时间不变或卡住 |
 | `video_quality(cam_*_decode_failed)` | 抽样 JPEG 解码失败比例超过阈值 | 图像损坏或编码异常 |
-| `state_action(low_directional_agreement)` | raw teleop 对 `qpos` 一阶差分与 `action` 做 lag 对齐后，方向一致性低于阈值 | action 和 state change 趋势不一致 |
+| `state_action(low_directional_agreement)` | raw teleop 用 `action - qpos` 近似命令方向，与 `qpos` 一阶差分做 lag 对齐后，方向一致性低于阈值 | action 和 state change 趋势不一致 |
 | `state_action(large_lag)` | 在 `[-max_lag_frames, max_lag_frames]` 内找最佳相关 lag，最佳 lag 贴近边界 | action/state 可能存在明显时序错位 |
 | `state_action(low_correlation)` | 可选阈值：最佳相关系数低于配置阈值 | action/state 线性趋势相关性低 |
 
@@ -101,6 +107,20 @@ HDF5 数据
 | `video_quality(cam_*_static)` | 计算相邻抽样帧平均差分，连续低于 `static_diff_eps` 的帧数超过阈值 | 对应相机画面长时间不变或卡住 |
 | `video_quality(cam_*_decode_failed)` | 抽样 JPEG 解码失败比例超过阈值 | 图像损坏或编码异常 |
 
+### V2 校准后的关键阈值
+
+| 模块 | 阈值 | 当前值 | 说明 |
+|---|---|---:|---|
+| video quality | `sample_frames` | 4 | 每路相机抽 4 帧，控制全量扫描成本 |
+| video quality | `black_luma` | 8.0 | 灰度均值低于该值视为黑帧 |
+| video quality | `blur_var` | 50.0 | Laplacian 方差低于该值视为模糊帧 |
+| video quality | `max_blur_ratio` | 0.5 | 抽样帧中模糊比例超过该值才报 blur |
+| state_action | `action_mode` | `target_delta` | ALOHA/teleop action 多为目标 qpos，用 `action-qpos` 近似命令方向 |
+| state_action | `max_points` | 300 | 长 episode 下采样，控制 S2 扫描成本 |
+| state_action | `da_threshold` | 0.30 | 根据当前 teleop 真实分布校准 |
+| state_action | `corr_threshold` | 0.50 | 低相关性作为辅助趋势错位信号 |
+| state_action | `max_lag_frames` | 15 | 允许搜索的最大时滞 |
+
 ## 4. 输出标签是什么意思
 
 每个 episode 会被分到四类之一：
@@ -140,6 +160,13 @@ raw 和 processed 的输出文件名都有 prefix，不会互相覆盖：
 |---|---|
 | raw | `raw_quality` |
 | processed | `processed_validity` |
+
+Markdown 报告现在包含：
+
+- `Summary`：各 label 数量。
+- `Top Reasons`：真正影响 label 的主要原因。
+- `Top Check Flags`：所有 check flag 的计数。
+- `Episodes`：每条 episode 的 label 和命中原因。
 
 ## 6. 怎么运行
 
@@ -186,10 +213,37 @@ uv run python scripts/run_filter.py \
 49 passed
 ```
 
-对应代码提交：
+关键代码提交：
 
 - `d7ccca3 Fix first-batch data filter review issues`
 - `66e08e3 Tighten first-batch data filter regressions`
+- `5b64ea6 Add v2 video and state-action checks`
+- `0ffa3e4 Improve report reason summaries`
+- `9bbfdac Tune v2 scan cost`
+- `454a950 Fix teleop state-action target direction`
+- `83d53c9 Calibrate teleop state-action thresholds`
+
+服务器真实数据报告：
+
+| 报告 | 路径 |
+|---|---|
+| V2 全量报告 | `/data01/cc/data/xvla_market_bottle/processing/data_filter_v2_run_20260709_120759` |
+| S2 校准后 teleop 报告 | `/data01/cc/data/xvla_market_bottle/processing/data_filter_v2_run_20260709_132952_teleop_calib` |
+
+S2 校准后的 teleop 结果：
+
+| 数据 | total | keep_high_quality | keep_with_downweight | review |
+|---|---:|---:|---:|---:|
+| `raw_market_bottle_tele` | 884 | 529 | 275 | 80 |
+| `raw_nas_teleop_full_raw` | 406 | 297 | 46 | 63 |
+
+新增 V2 flag 的真实命中情况：
+
+| 数据 | 主要新增命中 |
+|---|---|
+| `raw_market_bottle_tele` | `state_action(low_directional_agreement)` 64 条；`video_quality(cam_left_wrist_blur)` 15 条 |
+| `raw_nas_teleop_full_raw` | `state_action(low_directional_agreement/large_lag/low_correlation)` 61 条；`video_quality(cam_right_wrist_blur)` 11 条；`video_quality(cam_left_wrist_blur)` 10 条 |
+| `processed_all` | 少量 wrist blur；主要仍是 `motion(speed_outlier)`、`timestamp(dt_jump)`、`motion(long_static)` |
 
 ## 8. 还没做什么
 
@@ -203,9 +257,10 @@ uv run python scripts/run_filter.py \
 
 ## 9. 当前结论
 
-第一版可以作为轻量数据质量闸门使用：
+当前版本可以作为轻量数据质量闸门使用：
 
 - raw 层能挡掉明显坏采集。
 - processed 层能检查训练数据基本契约。
 - 输出结果可追溯，能直接给训练筛选列表和人工复核列表。
 - 配置和报告文件已经修正为可信，不会 raw/processed 混用或互相覆盖。
+- V2 新增 video quality 和 S2 后，经过真实数据校准，teleop 不再大面积误报；S2 主要命中已知冻结/异常数据。
