@@ -24,7 +24,7 @@ hard_checks:
 # quality 检查（出 score/flag，不 hard drop）
 quality_checks:
   motion: true           # 速度/加速度/jerk/长静止/过快
-  video_quality: false   # 待实现：模糊/黑帧比例
+  video_quality: true    # 模糊/黑帧/静止画面比例
   coverage: false        # 待实现：操作阶段 / 夹爪动作覆盖
   multicam: false        # 待实现：多相机可用性
 
@@ -45,8 +45,14 @@ thresholds:
     min_jerk_outlier_frames: 200
     speed_hi_pct: 99     # 速度分布高分位，供速度对齐参考
   video_quality:
+    sample_frames: 16
     black_luma: 8.0
     blur_var: 50.0
+    static_min_frames: 45
+    static_diff_eps: 1.0
+    max_black_ratio: 0.05
+    max_blur_ratio: 0.5
+    max_decode_failure_ratio: 0.0
 
 # 决策：三级 + 输出（不重写 hdf5）
 decision:

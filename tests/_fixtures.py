@@ -6,8 +6,11 @@
 
 from __future__ import annotations
 
+from io import BytesIO
+
 import h5py
 import numpy as np
+from PIL import Image
 
 # 与 schema.PROCESSED_ATTRS 对应的合法默认 attrs
 DEFAULT_ATTRS = {
@@ -88,9 +91,9 @@ def make_processed_hdf5(
         nfr = T if n_img_frames is None else n_img_frames
         if image_layout == "vlen":
             vlen = h5py.vlen_dtype(np.uint8)
+            jpeg = np.frombuffer(_jpeg_bytes(np.full((8, 8, 3), 128, dtype=np.uint8)), dtype=np.uint8)
             for cam in cameras:
                 ds = h.create_dataset(f"observations/images/{cam}", (nfr,), dtype=vlen)
-                jpeg = np.frombuffer(b"\xff\xd8\xff\xd9", dtype=np.uint8)  # 占位最小 JPEG 标记
                 for i in range(nfr):
                     ds[i] = jpeg
         elif image_layout == "chunked_index":
@@ -107,11 +110,17 @@ def make_processed_hdf5(
 
 def _write_vlen_images(h, T: int, cameras=("cam_high", "cam_left_wrist", "cam_right_wrist")) -> None:
     vlen = h5py.vlen_dtype(np.uint8)
-    jpeg = np.frombuffer(b"\xff\xd8\xff\xd9", dtype=np.uint8)
+    jpeg = np.frombuffer(_jpeg_bytes(np.full((8, 8, 3), 128, dtype=np.uint8)), dtype=np.uint8)
     for cam in cameras:
         ds = h.create_dataset(f"observations/images/{cam}", (T,), dtype=vlen)
         for i in range(T):
             ds[i] = jpeg
+
+
+def _jpeg_bytes(frame: np.ndarray) -> bytes:
+    buf = BytesIO()
+    Image.fromarray(frame).save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 def make_raw_pika_hdf5(path, T: int = 12, *, pose: np.ndarray | None = None) -> str:

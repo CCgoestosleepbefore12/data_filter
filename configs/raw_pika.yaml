@@ -16,7 +16,7 @@ checks:
   extreme: false         # 待实现：S3 极值（pika 用速度/delta）
   timestamp: true        # 时间戳/丢帧
   modality: true         # 模态长度一致
-  video_quality: false   # 待实现：C3 黑/糊/静止
+  video_quality: true    # C3 黑/糊/静止画面
   state_action: false    # pika 无独立 action，不适用
   arm_activity: false    # pika v1 暂不启用单臂冻结评分
 
@@ -36,9 +36,14 @@ thresholds:
   timestamp:
     max_dt_ratio: 3.0          # dt 相对中位数的最大倍率
   video_quality:
+    sample_frames: 16
     black_luma: 8.0            # 平均亮度低于此判黑帧
     blur_var: 50.0             # 拉普拉斯方差低于此判模糊
     static_min_frames: 45      # 长静止段帧数（保留夹爪关键帧）
+    static_diff_eps: 1.0
+    max_black_ratio: 0.05
+    max_blur_ratio: 0.5
+    max_decode_failure_ratio: 0.0
 
 # 输出：mask + report + exclude-list（不重写 hdf5）
 output:

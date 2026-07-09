@@ -1,4 +1,4 @@
-# data_filter 第一版说明
+# data_filter V1/V2 说明
 
 ## 1. 这是什么
 
@@ -28,11 +28,13 @@ HDF5 数据
   -> 输出 report / list / sampling weights
 ```
 
-## 3. 第一版已经能查什么
+## 3. 当前版本已经能查什么
 
 ### Raw 数据
 
 报告里的 `check(flag)` 可以这样理解：
+
+命名说明：raw teleop 里，`timestamp(...)` 对应 `observations/eef_left_time`，`eef_right_time(...)` 对应 `observations/eef_right_time`。所以左右臂时间轴都会查，只是左臂在当前报告里叫 `timestamp`。
 
 | 报错类型 | 怎么检测 | 含义 |
 |---|---|---|
@@ -42,17 +44,25 @@ HDF5 数据
 | `min_length(too_short)` | episode 帧数 `< 1` | 空 episode，直接 `drop` |
 | `modality(length_mismatch)` | 比较 qpos/action/pose/timestamp/image 的长度 | 多个模态帧数不同，说明同步或写入有问题 |
 | `image_schema(missing:...)` | 检查三路相机 key 是否存在 | 缺 `cam_high`、`cam_left_wrist` 或 `cam_right_wrist` |
-| `timestamp(missing)` | 主时间轴不存在 | 时间戳缺失，直接 `drop` |
-| `timestamp(non_monotonic)` | 检查 `timestamp[i+1] - timestamp[i] > 0` | 时间戳倒退，直接 `drop` |
-| `timestamp(dt_jump)` | 计算 `dt`，若 `max(dt) > 3 * median(dt)` | 中间可能丢帧、暂停、采集卡顿 |
+| `timestamp(missing)` | raw teleop 检查 `eef_left_time`；raw pika 检查 `timestamps` | 左臂/主时间轴缺失，直接 `drop` |
+| `timestamp(non_monotonic)` | raw teleop 对 `eef_left_time` 检查 `time[i+1] - time[i] > 0`；raw pika 对 `timestamps` 检查 | 左臂/主时间轴倒退，直接 `drop` |
+| `timestamp(dt_jump)` | raw teleop 对 `eef_left_time` 计算 `dt`；raw pika 对 `timestamps` 计算；若 `max(dt) > 3 * median(dt)` | 左臂/主时间轴可能丢帧、暂停、采集卡顿 |
 | `eef_right_time(missing)` | raw teleop 检查右臂时间轴是否存在 | 右臂时间戳缺失，直接 `drop` |
-| `eef_right_time(dt_jump)` | 对右臂时间轴做同样的 `dt_jump` 检查 | 右臂时间轴有采集卡顿或跳变 |
+| `eef_right_time(non_monotonic)` | raw teleop 对 `eef_right_time` 检查 `time[i+1] - time[i] > 0` | 右臂时间轴倒退，直接 `drop` |
+| `eef_right_time(dt_jump)` | raw teleop 对 `eef_right_time` 计算 `dt`，若 `max(dt) > 3 * median(dt)` | 右臂时间轴有采集卡顿或跳变 |
 | `timestamp_skew(clock_skew)` | 比较 `eef_left_time` 和 `eef_right_time`，默认最大差值 `> 0.05s` | 左右臂时间轴不同步 |
 | `spike(spike)` | 对轨迹计算速度、加速度、jerk；超过鲁棒阈值的帧数达到阈值 | 轨迹有突变或不连续 |
 | `tracking(teleport)` | pika 位姿单帧位移 `> teleport_m` | pika tracking 瞬移 |
 | `tracking(frozen)` | pika 位姿连续多帧几乎不动 | pika tracking 可能冻结 |
 | `arm_activity(right_arm_frozen)` | 右臂半区 unique row 太少或均值标准差太小 | 右臂整段信号缺失/冻结，进入 `review` |
 | `arm_activity(left_arm_frozen)` | 左臂半区 unique row 太少或均值标准差太小 | 左臂整段信号缺失/冻结，进入 `review` |
+| `video_quality(cam_*_black)` | 抽样解码相机图像，灰度均值低于 `black_luma` 的比例超过阈值 | 对应相机有明显黑帧 |
+| `video_quality(cam_*_blur)` | 抽样图像计算 Laplacian 方差，低于 `blur_var` 的比例超过阈值 | 对应相机画面模糊 |
+| `video_quality(cam_*_static)` | 计算相邻抽样帧平均差分，连续低于 `static_diff_eps` 的帧数超过阈值 | 对应相机画面长时间不变或卡住 |
+| `video_quality(cam_*_decode_failed)` | 抽样 JPEG 解码失败比例超过阈值 | 图像损坏或编码异常 |
+| `state_action(low_directional_agreement)` | raw teleop 对 `qpos` 一阶差分与 `action` 做 lag 对齐后，方向一致性低于阈值 | action 和 state change 趋势不一致 |
+| `state_action(large_lag)` | 在 `[-max_lag_frames, max_lag_frames]` 内找最佳相关 lag，最佳 lag 贴近边界 | action/state 可能存在明显时序错位 |
+| `state_action(low_correlation)` | 可选阈值：最佳相关系数低于配置阈值 | action/state 线性趋势相关性低 |
 
 已覆盖的真实问题：
 
@@ -86,6 +96,10 @@ HDF5 数据
 | `motion(jerk_outlier)` | 由速度差分得到加速度，再差分得到 jerk；异常帧数达到阈值 | 加速度/加加速度不连续 |
 | `motion(long_static)` | 连续低速度帧数超过 `static_min_frames` | episode 有长时间静止段 |
 | `motion(low_gripper_coverage)` | 统计左右夹爪变化次数，低于阈值 | 夹爪动作覆盖不足 |
+| `video_quality(cam_*_black)` | 抽样解码相机图像，灰度均值低于 `black_luma` 的比例超过阈值 | 对应相机有明显黑帧 |
+| `video_quality(cam_*_blur)` | 抽样图像计算 Laplacian 方差，低于 `blur_var` 的比例超过阈值 | 对应相机画面模糊 |
+| `video_quality(cam_*_static)` | 计算相邻抽样帧平均差分，连续低于 `static_diff_eps` 的帧数超过阈值 | 对应相机画面长时间不变或卡住 |
+| `video_quality(cam_*_decode_failed)` | 抽样 JPEG 解码失败比例超过阈值 | 图像损坏或编码异常 |
 
 ## 4. 输出标签是什么意思
 
@@ -166,10 +180,10 @@ uv run python scripts/run_filter.py \
 
 ## 7. 当前状态
 
-第一版已经完成并通过测试：
+当前版本已经完成并通过测试：
 
 ```text
-46 passed
+49 passed
 ```
 
 对应代码提交：
@@ -177,14 +191,12 @@ uv run python scripts/run_filter.py \
 - `d7ccca3 Fix first-batch data filter review issues`
 - `66e08e3 Tighten first-batch data filter regressions`
 
-## 8. 第一版还没做什么
+## 8. 还没做什么
 
 这些放到后续版本：
 
 | 功能 | 说明 |
 |---|---|
-| video quality | 黑帧、模糊、长静止图像检查 |
-| S2 state-action 对齐 | 检查 action 和 state change 的时间趋势是否对齐 |
 | C2 video-state consistency | 用重投影和分割 mask 检查视频与机器人状态是否一致 |
 | rot6d 行/列语义错误 | 当前只能检查正交和范数，不能判断所有语义错误 |
 | VLM/SAM/URDF 检查 | 依赖较重，后续再接 |

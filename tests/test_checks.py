@@ -11,9 +11,11 @@ from data_filter.checks.motion import check_motion_quality
 from data_filter.checks.raw_activity import check_bimanual_activity
 from data_filter.checks.rot6d import check_rot6d
 from data_filter.checks.spike import check_spike
+from data_filter.checks.state_action import check_state_action
 from data_filter.checks.timestamp import check_clock_skew
 from data_filter.checks.tracking import check_tracking
 from data_filter.checks.validity import check_finite, check_schema_shape
+from data_filter.checks.video import check_video_quality
 from data_filter.io import schema
 
 from ._fixtures import DEFAULT_ATTRS, valid_qpos, valid_rot6d
@@ -185,3 +187,51 @@ def test_bimanual_activity_flags_frozen_right_arm():
     assert r.passed
     assert "right_arm_frozen" in r.flags
     assert "left_arm_frozen" not in r.flags
+
+
+def test_video_quality_flags_black_and_static():
+    frames = np.zeros((12, 8, 8, 3), dtype=np.uint8)
+    r = check_video_quality(
+        frames,
+        {
+            "black_luma": 8.0,
+            "max_black_ratio": 0.1,
+            "blur_var": -1.0,
+            "static_min_frames": 5,
+            "static_diff_eps": 1.0,
+        },
+        camera="cam_high",
+    )
+    assert r.passed
+    assert "cam_high_black" in r.flags
+    assert "cam_high_static" in r.flags
+
+
+def test_state_action_flags_low_directional_agreement():
+    T = 40
+    qpos = np.zeros((T, 14), dtype=np.float32)
+    qpos[:, 0] = np.linspace(0.0, 1.0, T)
+    action = np.zeros((T, 14), dtype=np.float32)
+    action[:, 0] = -1.0
+    r = check_state_action(
+        qpos,
+        action,
+        {"da_threshold": 0.65, "max_lag_frames": 3, "active_eps": 1.0e-4, "smooth_window": 1},
+    )
+    assert r.passed
+    assert "low_directional_agreement" in r.flags
+
+
+def test_state_action_passes_aligned_trend():
+    T = 40
+    qpos = np.zeros((T, 14), dtype=np.float32)
+    qpos[:, 0] = np.linspace(0.0, 1.0, T)
+    action = np.zeros((T, 14), dtype=np.float32)
+    action[:, 0] = 1.0
+    r = check_state_action(
+        qpos,
+        action,
+        {"da_threshold": 0.65, "max_lag_frames": 3, "active_eps": 1.0e-4, "smooth_window": 1},
+    )
+    assert r.passed
+    assert "low_directional_agreement" not in r.flags

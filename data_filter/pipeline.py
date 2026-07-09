@@ -20,9 +20,11 @@ from .checks.motion import check_motion_quality
 from .checks.raw_activity import check_bimanual_activity
 from .checks.rot6d import check_rot6d
 from .checks.spike import check_spike
+from .checks.state_action import check_state_action
 from .checks.timestamp import check_clock_skew, check_timestamp
 from .checks.tracking import check_tracking
 from .checks.validity import check_finite, check_min_length, check_required_keys, check_schema_shape
+from .checks.video import check_video_quality
 from .config import load_config
 from .io import schema
 from .io.loaders import EpisodeSignals, load_processed_xvla, load_raw_pika, load_raw_teleop
@@ -79,6 +81,8 @@ def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
             results.append(check_gripper(ep.gripper, ep.attrs, thr.get("gripper", {})))
         if _quality_enabled(cfg, "motion"):
             results.append(check_motion_quality(ep.qpos, thr.get("motion", {})))
+        if _quality_enabled(cfg, "video_quality"):
+            results.extend(_run_video_checks(ep, thr.get("video_quality", {})))
 
     if _enabled(cfg, "attrs"):
         results.append(check_attrs(ep.attrs, ep.source_kind, {}))
@@ -166,11 +170,73 @@ def _run_raw_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
         signal = ep.pose if ep.pose is not None else ep.qpos
         if signal is not None:
             results.append(check_spike(signal, thr.get("spike", {})))
+    if _raw_enabled(cfg, "state_action") and ep.source_kind == "teleop" and ep.qpos is not None and ep.action is not None:
+        results.append(check_state_action(ep.qpos, ep.action, thr.get("state_action", {})))
+    if _raw_enabled(cfg, "video_quality"):
+        results.extend(_run_video_checks(ep, thr.get("video_quality", {})))
     if _raw_enabled(cfg, "arm_activity"):
         signal = ep.pose if ep.pose is not None else ep.qpos
         if signal is not None:
             results.append(check_bimanual_activity(signal, thr.get("arm_activity", {})))
     return results
+
+
+def _run_video_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
+    results: list[CheckResult] = []
+    for key in ep.image_keys:
+        camera = os.path.basename(key)
+        frames = _sample_image_bytes(ep.path, key, cfg)
+        results.append(check_video_quality(frames, cfg, camera=camera))
+    return results
+
+
+def _sample_image_bytes(path: str, key: str, cfg: dict) -> list[bytes]:
+    import h5py
+    import numpy as np
+
+    max_frames = int(cfg.get("sample_frames", 16))
+    if max_frames <= 0:
+        return []
+    out: list[bytes] = []
+    with h5py.File(path, "r") as h:
+        if key not in h:
+            return out
+        obj = h[key]
+        if isinstance(obj, h5py.Dataset):
+            n = int(obj.shape[0]) if obj.shape else 1
+            for idx in _sample_indices(n, max_frames):
+                out.append(_as_bytes(obj[idx]))
+            return out
+        if isinstance(obj, h5py.Group):
+            rows = []
+            for name in sorted(obj.keys()):
+                child = obj[name]
+                if isinstance(child, h5py.Dataset):
+                    n = int(child.shape[0]) if child.shape else 1
+                    rows.extend((child, i) for i in range(n))
+            for idx in _sample_indices(len(rows), max_frames):
+                child, row = rows[idx]
+                out.append(_as_bytes(child[row]))
+    return out
+
+
+def _sample_indices(n: int, max_frames: int) -> list[int]:
+    import numpy as np
+
+    if n <= 0:
+        return []
+    count = min(n, max_frames)
+    return [int(i) for i in np.linspace(0, n - 1, count, dtype=int)]
+
+
+def _as_bytes(value) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if hasattr(value, "tobytes"):
+        return value.tobytes()
+    return bytes(value)
 
 
 def run_raw_gate(root: str, source: str, cfg: dict | None = None) -> dict:
