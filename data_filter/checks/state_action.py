@@ -27,7 +27,13 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
     n = min(q.shape[0] - 1, a.shape[0])
     d = min(q.shape[1], a.shape[1], int(cfg.get("dims", min(q.shape[1], a.shape[1]))))
     state_delta = np.diff(q[: n + 1, :d], axis=0)
-    action_sig = a[:n, :d]
+    action_mode = str(cfg.get("action_mode", "target_delta"))
+    if action_mode == "target_delta":
+        action_sig = a[:n, :d] - q[:n, :d]
+    elif action_mode == "direct":
+        action_sig = a[:n, :d]
+    else:
+        raise ValueError(f"unknown action_mode: {action_mode}")
 
     max_points = int(cfg.get("max_points", 300))
     if max_points > 0 and n > max_points:
@@ -73,6 +79,7 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
             "directional_agreement": directional_agreement,
             "active_frame_ratio": active_ratio,
             "dims": int(d),
+            "action_mode": action_mode,
         },
         flags=flags,
     )
