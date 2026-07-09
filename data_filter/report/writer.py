@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import json
 import os
 
@@ -95,10 +96,31 @@ def _title_from_prefix(prefix: str) -> str:
 
 def _render_md(summary: dict, episodes: list, title: str = "Processed validity report") -> str:
     lines = [f"# {title}", ""]
+    lines.append("## Summary")
+    lines.append("")
     lines.append(f"- 总数: {summary.get('total', len(episodes))}")
     for label, n in sorted(summary.get("by_label", {}).items()):
         lines.append(f"- {label}: {n}")
-    lines += ["", "| episode | source | label | 命中 |", "|---|---|---|---|"]
+
+    lines += ["", "## Top Reasons", ""]
+    reason_counter = _reason_counter(episodes)
+    if reason_counter:
+        lines += ["| count | reason |", "|---:|---|"]
+        for reason, count in reason_counter.most_common(20):
+            lines.append(f"| {count} | `{reason}` |")
+    else:
+        lines.append("- 无")
+
+    lines += ["", "## Top Check Flags", ""]
+    flag_counter = _flag_counter(episodes)
+    if flag_counter:
+        lines += ["| count | check(flag) |", "|---:|---|"]
+        for reason, count in flag_counter.most_common(20):
+            lines.append(f"| {count} | `{reason}` |")
+    else:
+        lines.append("- 无")
+
+    lines += ["", "## Episodes", "", "| episode | source | label | 命中 |", "|---|---|---|---|"]
     for e in episodes:
         reasons = "; ".join(
             f"{r['check']}({','.join(r['flags'])})" for r in e.get("reasons", [])
@@ -108,3 +130,24 @@ def _render_md(summary: dict, episodes: list, title: str = "Processed validity r
             f"| {e.get('label', '-')} | {reasons or '-'} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def _reason_counter(episodes: list[dict]) -> Counter:
+    counter: Counter = Counter()
+    for e in episodes:
+        for r in e.get("reasons", []):
+            counter[_format_reason(r.get("check", "-"), r.get("flags", []))] += 1
+    return counter
+
+
+def _flag_counter(episodes: list[dict]) -> Counter:
+    counter: Counter = Counter()
+    for e in episodes:
+        for c in e.get("checks", []):
+            for flag in c.get("flags", []):
+                counter[_format_reason(c.get("name", "-"), [flag])] += 1
+    return counter
+
+
+def _format_reason(check: str, flags: list[str]) -> str:
+    return f"{check}({','.join(flags)})" if flags else f"{check}()"

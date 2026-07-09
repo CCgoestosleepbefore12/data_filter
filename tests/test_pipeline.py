@@ -98,6 +98,10 @@ def test_write_report_outputs(tmp_path):
     assert (tmp_path / "out" / "processed_validity_keep_high_quality_list.txt").exists()
     assert (tmp_path / "out" / "processed_validity_review_list.txt").exists()
     assert (tmp_path / "out" / "processed_validity_downweight_list.txt").exists()
+    md = open(out["md"], encoding="utf-8").read()
+    assert "## Top Reasons" in md
+    assert "## Top Check Flags" in md
+    assert "rot6d_left(orthogonality)" in md
 
 
 def test_raw_gate_pika_end_to_end(tmp_path):
