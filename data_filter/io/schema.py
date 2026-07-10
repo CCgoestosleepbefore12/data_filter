@@ -43,6 +43,16 @@ RAW_TELEOP = {
     "eef_time": ["observations/eef_left_time", "observations/eef_right_time"],  # 各 (T,)
 }
 
+# V2 raw teleop gate 的硬依赖字段。RAW_TELEOP 里其余字段是已知可用字段，
+# 但当前检查不会把缺失 qvel/effort/language 等作为 hard fail。
+RAW_TELEOP_V2_REQUIRED = [
+    RAW_TELEOP["action"],
+    RAW_TELEOP["qpos"],
+    RAW_TELEOP["eef_time"][0],
+    RAW_TELEOP["eef_time"][1],
+    *RAW_TELEOP["images"],
+]
+
 # ---------------------------------------------------------------------------
 # processed XVLA （训练用，统一 20D qpos）
 #   qpos 布局: [left_pose9, left_gripper, right_pose9, right_gripper]

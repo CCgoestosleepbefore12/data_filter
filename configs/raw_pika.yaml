@@ -1,13 +1,10 @@
 # raw pika / UMI 质量闸门配置
-# 阈值均为 provisional，待真实分布 + review 队列校准。
+# 阈值按当前真实数据分布初步校准；运行时建议用 --root 显式指定数据根。
 
 source_kind: pika
 
-# TODO: 填真实数据根（可多个）
 data_roots:
-  - ~/data/0703_lyd_01_synced
-  # - ~/data/0701_lyd_01_synced
-  # - ~/data/0702_lyd_01_synced
+  - ""
 
 # 启用的检查（raw gate）
 checks:
@@ -16,11 +13,10 @@ checks:
   extreme: false         # 待实现：S3 极值（pika 用速度/delta）
   timestamp: true        # 时间戳/丢帧
   modality: true         # 模态长度一致
-  video_quality: true    # C3 黑/糊/静止画面
+  video_quality: true    # C3 黑/糊/静止/解码失败
   state_action: false    # pika 无独立 action，不适用
   arm_activity: false    # pika v1 暂不启用单臂冻结评分
 
-# provisional 阈值
 thresholds:
   spike:
     residual_sigma: 6.0        # 残差 > k·σ
@@ -39,14 +35,17 @@ thresholds:
     sample_frames: 4
     black_luma: 8.0            # 平均亮度低于此判黑帧
     blur_var: 50.0             # 拉普拉斯方差低于此判模糊
-    static_min_frames: 45      # 长静止段帧数（保留夹爪关键帧）
+    enable_static: true
+    static_min_frames: 45
+    static_window_frames: 45
+    static_sample_windows: 1
     static_diff_eps: 1.0
     max_black_ratio: 0.05
     max_blur_ratio: 0.5
     max_decode_failure_ratio: 0.0
+    max_shape_mismatch_ratio: 0.0
 
-# 输出：mask + report + exclude-list（不重写 hdf5）
+# 输出：report + exclude-list（不重写 hdf5）
 output:
-  write_mask: true
   write_report: true
   write_exclude_list: true

@@ -1,11 +1,10 @@
 # raw teleop / NAS 质量闸门配置
-# 阈值均为 provisional，待真实分布 + review 队列校准。
+# 阈值按当前真实数据分布初步校准；运行时建议用 --root 显式指定数据根。
 
 source_kind: teleop
 
-# TODO: 填 NAS/teleop 真实数据根
 data_roots:
-  - ""   # TODO
+  - ""
 
 # 启用的检查（raw gate）
 checks:
@@ -14,11 +13,10 @@ checks:
   extreme: false         # 待实现：S3 极值（绝对值可用）
   timestamp: true        # 时间戳/丢帧（含 eef_left/right_time 同步）
   modality: true         # 模态长度一致
-  video_quality: true    # C3 黑/糊/静止画面
+  video_quality: true    # C3 黑/糊/静止/解码失败
   state_action: true     # S2 qpos vs action 趋势对齐
   arm_activity: true     # 单臂信号冻结/缺失
 
-# provisional 阈值
 thresholds:
   spike:
     residual_sigma: 6.0
@@ -49,13 +47,16 @@ thresholds:
     sample_frames: 4
     black_luma: 8.0
     blur_var: 50.0
+    enable_static: true
     static_min_frames: 45
+    static_window_frames: 45
+    static_sample_windows: 1
     static_diff_eps: 1.0
     max_black_ratio: 0.05
     max_blur_ratio: 0.5
     max_decode_failure_ratio: 0.0
+    max_shape_mismatch_ratio: 0.0
 
 output:
-  write_mask: true
   write_report: true
   write_exclude_list: true

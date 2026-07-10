@@ -21,10 +21,14 @@ from .base import CheckResult
 def check_rot6d(rot6d: np.ndarray, cfg: dict, name: str = "rot6d") -> CheckResult:
     """rot6d: (T, 6) = concat(R[:,0], R[:,1])。返回正交性指标与 hard_fail。"""
     tol = cfg.get("tol", 1e-3)
-    if not np.all(np.isfinite(rot6d)):
+    try:
+        rot = np.asarray(rot6d, dtype=np.float64)
+    except (TypeError, ValueError):
+        return CheckResult.hard(name, False, flags=["nonnumeric"])
+    if not np.all(np.isfinite(rot)):
         return CheckResult.hard(name, False, flags=["nonfinite"])
 
-    a, b = rot6d[:, :3], rot6d[:, 3:]                       # 各 (T, 3)
+    a, b = rot[:, :3], rot[:, 3:]                       # 各 (T, 3)
     err_a = float(np.abs(np.linalg.norm(a, axis=1) - 1.0).max())
     err_b = float(np.abs(np.linalg.norm(b, axis=1) - 1.0).max())
     err_dot = float(np.abs(np.sum(a * b, axis=1)).max())

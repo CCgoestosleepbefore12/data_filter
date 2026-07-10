@@ -1,6 +1,6 @@
 """配置加载：按源分离的 YAML（configs/raw_pika|raw_teleop|processed_xvla.yaml）。
 
-阈值全部为 provisional，待真实分布与 review 队列校准。
+阈值按源分离并随真实数据 review 队列持续校准。
 """
 
 from __future__ import annotations

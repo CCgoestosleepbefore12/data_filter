@@ -31,7 +31,7 @@
 
 | 阶段 | 输入 | 目的 | 输出 |
 |---|---|---|---|
-| Raw quality gate | raw pika/teleop | 挡明显坏采集 | raw report + frame mask + episode flags + exclude-list |
+| Raw quality gate | raw pika/teleop | 挡明显坏采集 | raw report + episode flags + exclude-list |
 | Processed validity gate | processed XVLA | 验证转换契约 | validity report + hard-fail 列表 |
 | Quality scoring | raw+processed metrics | 生成质量分数 | episode_scores.jsonl + source 分布 |
 | Dataset selection | score + mask (+人工复核) | 出可训练列表 | keep/downweight/drop lists + sampling_weights |
@@ -51,7 +51,7 @@
 | extreme (S3) | ✅(速度) | ✅(绝对) | quality | 超 [q01−α·IQR, q99+α·IQR]；夹爪豁免 |
 | timestamp | ✅ | ✅ | hard(非单调)+quality | 单调；dt≤max_dt_ratio·median；时钟偏差 |
 | modality | ✅ | ✅ | hard | 各模态 T 相等 |
-| video_quality (C3) | ✅ | ✅ | quality | 黑帧/模糊/长静止（保留夹爪关键帧） |
+| video_quality (C3) | ✅ | ✅ | quality | 黑帧/模糊/解码失败；长静止使用连续窗口采样 |
 
 ### 4.2 Processed gate
 | 检查 | 类型 | 判据（provisional） |
@@ -71,15 +71,17 @@ v1 **不做**：C1 指令一致(VLM)、C2 video-state IoU(SAM3)、S4 FK(URDF)（
 
 ## 5. 决策与输出
 
-- **hard-validity 失败** → `drop`（processed 为 block），不进打分。
+- **hard-validity 失败** → `drop`（processed 为 block），不进打分；check 运行时异常进入 `review`，不混入 drop list。
 - **quality** → 透明规则分级（第一版）：任一 hard fail → `drop`；quality flag ≥ `review_when_quality_flags_ge` → `review`；否则 `keep_high_quality`；轻微异常 → `keep_with_downweight`。**暂不塌成加权标量**。
 - **输出**（不重写 HDF5）：
-  - raw：`raw_quality_report.json/md`、frame mask、`raw_exclude_list`。
+  - raw：`raw_quality_report.json/md`、episode flags、`raw_exclude_list`。
   - processed：`processed_validity_report.json/md`、`episode_scores.jsonl`、`keep/downweight/drop` lists、`sampling_weights.json`。
 
 ## 6. 配置
 
-按源分离：`configs/raw_pika.yaml`、`raw_teleop.yaml`、`processed_xvla.yaml`。含 `data_roots`（部分为 TODO 待填）、启用检查、provisional 阈值、输出开关。
+按源分离：`configs/raw_pika.yaml`、`raw_teleop.yaml`、`processed_xvla.yaml`。运行时建议用 `--root` 显式指定数据根；默认配置只保留检查开关和已校准阈值。
+
+Raw teleop schema 里记录的是已知可用字段全集；V2 gate 的硬依赖是 `action`、`observations/qpos`、左右臂 `eef_*_time` 和三路相机。`qvel/effort/language` 等字段当前不作为 hard contract。
 
 ## 7. 模块接口
 

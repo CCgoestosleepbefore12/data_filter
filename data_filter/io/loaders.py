@@ -11,6 +11,7 @@ raw loader 读取 raw PIKA/UMI 与 raw teleop/NAS 的轻量信号，不解码图
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Optional
 
 import h5py
@@ -103,6 +104,161 @@ def _collect_image_lengths(h: h5py.File) -> tuple[tuple[str, ...], dict[str, int
         image_keys.append(key)
         image_lengths[key] = int(length)
     return tuple(image_keys), image_lengths
+
+
+def sample_image_frames(
+    h: h5py.File,
+    key: str,
+    max_frames: int,
+    *,
+    window_frames: int = 0,
+    num_windows: int = 0,
+) -> list[bytes | None]:
+    """按 loader 支持的图像布局抽样帧 bytes。
+
+    返回列表中 `None` 表示该抽样帧读取失败；后续 video check 会把它计入
+    decode failure，而不是让整个 episode 变成 check_exception。
+    """
+    max_frames = int(max_frames)
+    window_frames = int(window_frames)
+    num_windows = int(num_windows)
+    if max_frames <= 0 and (window_frames <= 0 or num_windows <= 0):
+        return []
+    if key not in h:
+        return []
+
+    obj = h[key]
+    if isinstance(obj, h5py.Dataset):
+        return _sample_dataset_frames(obj, max_frames, window_frames=window_frames, num_windows=num_windows)
+    if isinstance(obj, h5py.Group):
+        return _sample_group_frames(
+            h,
+            key,
+            obj,
+            max_frames,
+            window_frames=window_frames,
+            num_windows=num_windows,
+        )
+    return []
+
+
+def _sample_dataset_frames(
+    ds: h5py.Dataset,
+    max_frames: int,
+    *,
+    window_frames: int = 0,
+    num_windows: int = 0,
+) -> list[bytes | None]:
+    n = _dataset_len(ds)
+    out: list[bytes | None] = []
+    for idx in _combined_sample_indices(n, max_frames, window_frames, num_windows):
+        try:
+            out.append(_as_bytes(ds[idx]))
+        except Exception:
+            out.append(None)
+    return out
+
+
+def _sample_group_frames(
+    h: h5py.File,
+    key: str,
+    group: h5py.Group,
+    max_frames: int,
+    *,
+    window_frames: int = 0,
+    num_windows: int = 0,
+) -> list[bytes | None]:
+    chunks = [
+        (name, child)
+        for name, child in sorted(group.items(), key=lambda item: _natural_key(item[0]))
+        if isinstance(child, h5py.Dataset) and name != "index" and not name.endswith("_index")
+    ]
+    if not chunks:
+        return []
+
+    index = _image_index_dataset(h, key, group)
+    logical_len = _dataset_len(index) if index is not None else sum(_dataset_len(child) for _, child in chunks)
+    out: list[bytes | None] = []
+    for logical_idx in _combined_sample_indices(logical_len, max_frames, window_frames, num_windows):
+        try:
+            if index is not None:
+                chunk_idx, row_idx = _resolve_index(index[logical_idx], chunks)
+            else:
+                chunk_idx, row_idx = _resolve_flat_offset(logical_idx, chunks)
+            out.append(_as_bytes(chunks[chunk_idx][1][row_idx]))
+        except Exception:
+            out.append(None)
+    return out
+
+
+def _image_index_dataset(h: h5py.File, key: str, group: h5py.Group):
+    parent_path, camera = key.rsplit("/", 1)
+    sibling_index = f"{parent_path}/{camera}_index"
+    if sibling_index in h and isinstance(h[sibling_index], h5py.Dataset):
+        return h[sibling_index]
+    if "index" in group and isinstance(group["index"], h5py.Dataset):
+        return group["index"]
+    return None
+
+
+def _resolve_index(value, chunks: list[tuple[str, h5py.Dataset]]) -> tuple[int, int]:
+    arr = np.asarray(value)
+    if arr.ndim == 0:
+        return _resolve_flat_offset(int(arr), chunks)
+    flat = arr.reshape(-1)
+    if flat.size >= 2:
+        chunk_idx = int(flat[0])
+        row_idx = int(flat[1])
+        if 0 <= chunk_idx < len(chunks):
+            return chunk_idx, row_idx
+    if flat.size >= 1:
+        return _resolve_flat_offset(int(flat[0]), chunks)
+    raise ValueError("empty image index row")
+
+
+def _resolve_flat_offset(offset: int, chunks: list[tuple[str, h5py.Dataset]]) -> tuple[int, int]:
+    if offset < 0:
+        raise IndexError(offset)
+    cur = int(offset)
+    for i, (_, child) in enumerate(chunks):
+        n = _dataset_len(child)
+        if cur < n:
+            return i, cur
+        cur -= n
+    raise IndexError(offset)
+
+
+def _sample_indices(n: int, max_frames: int) -> list[int]:
+    if n <= 0:
+        return []
+    count = min(int(n), int(max_frames))
+    return [int(i) for i in np.linspace(0, n - 1, count, dtype=int)]
+
+
+def _combined_sample_indices(n: int, max_frames: int, window_frames: int, num_windows: int) -> list[int]:
+    indices = set(_sample_indices(n, max_frames))
+    if n <= 0 or window_frames <= 0 or num_windows <= 0:
+        return sorted(indices)
+    win = min(int(window_frames), int(n))
+    max_start = max(0, int(n) - win)
+    starts = _sample_indices(max_start + 1, num_windows)
+    for start in starts:
+        indices.update(range(int(start), int(start) + win))
+    return sorted(indices)
+
+
+def _natural_key(name: str) -> list[int | str]:
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", name)]
+
+
+def _as_bytes(value) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if hasattr(value, "tobytes"):
+        return value.tobytes()
+    return bytes(value)
 
 
 def load_raw_pika(path: str) -> EpisodeSignals:

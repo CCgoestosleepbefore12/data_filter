@@ -17,7 +17,10 @@ def check_gripper(gripper: np.ndarray, attrs: dict, cfg: dict, name: str = "grip
 
     正负翻转（positive=closed 反了）需语义参照，v1 不查。
     """
-    g = np.asarray(gripper, dtype=np.float64)
+    try:
+        g = np.asarray(gripper, dtype=np.float64)
+    except (TypeError, ValueError):
+        return CheckResult.hard(name, False, flags=["nonnumeric"])
     tol = cfg.get("binary_tol", 1e-3)
     if not np.all(np.isfinite(g)):
         return CheckResult.hard(name, False, flags=["nonfinite"])

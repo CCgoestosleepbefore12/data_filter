@@ -36,8 +36,10 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
         raise ValueError(f"unknown action_mode: {action_mode}")
 
     max_points = int(cfg.get("max_points", 300))
+    sample_stride_frames = 1.0
     if max_points > 0 and n > max_points:
         idx = np.linspace(0, n - 1, max_points, dtype=int)
+        sample_stride_frames = float((n - 1) / max(max_points - 1, 1))
         state_delta = state_delta[idx]
         action_sig = action_sig[idx]
 
@@ -48,10 +50,11 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
     max_lag = int(cfg.get("max_lag_frames", 15))
     active_eps = float(cfg.get("active_eps", 1e-4))
     min_active_ratio = float(cfg.get("min_active_ratio", 0.05))
-    da_threshold = float(cfg.get("da_threshold", 0.65))
-    corr_threshold = float(cfg.get("corr_threshold", -1.0))
+    da_threshold = float(cfg.get("da_threshold", 0.30))
+    corr_threshold = float(cfg.get("corr_threshold", 0.50))
 
     best_lag, best_corr = _best_lag(action_sig, state_delta, max_lag)
+    best_lag_frames_est = float(best_lag * sample_stride_frames)
     aa, ss = _align_by_lag(action_sig, state_delta, best_lag)
     active = (np.abs(aa) > active_eps) | (np.abs(ss) > active_eps)
     active_ratio = float(np.count_nonzero(active) / active.size) if active.size else 0.0
@@ -64,7 +67,7 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
     flags: list[str] = []
     if active_ratio >= min_active_ratio and directional_agreement < da_threshold:
         flags.append("low_directional_agreement")
-    if abs(best_lag) >= max_lag and active_ratio >= min_active_ratio:
+    if abs(best_lag_frames_est) >= max_lag and active_ratio >= min_active_ratio:
         flags.append("large_lag")
     if corr_threshold >= 0 and best_corr < corr_threshold and active_ratio >= min_active_ratio:
         flags.append("low_correlation")
@@ -75,11 +78,16 @@ def check_state_action(qpos: np.ndarray, action: np.ndarray, cfg: dict) -> Check
         severity="warn" if flags else "info",
         metrics={
             "best_lag": int(best_lag),
+            "best_lag_frames_est": best_lag_frames_est,
             "best_corr": float(best_corr),
             "directional_agreement": directional_agreement,
             "active_frame_ratio": active_ratio,
             "dims": int(d),
             "action_mode": action_mode,
+            "sample_stride_frames": sample_stride_frames,
+            "da_threshold": da_threshold,
+            "corr_threshold": corr_threshold,
+            "max_lag_frames": int(max_lag),
         },
         flags=flags,
     )
@@ -103,7 +111,7 @@ def _best_lag(action: np.ndarray, state_delta: np.ndarray, max_lag: int) -> tupl
         if aa.size == 0:
             continue
         corr = _corrcoef_flat(aa, ss)
-        if corr > best_corr:
+        if corr > best_corr or (np.isclose(corr, best_corr) and abs(lag) < abs(best_lag)):
             best_lag = lag
             best_corr = corr
     return best_lag, best_corr

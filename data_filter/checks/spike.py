@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._stats import robust_limit
 from .base import CheckResult
 
 
@@ -32,18 +33,10 @@ def check_spike(signal: np.ndarray, cfg: dict) -> CheckResult:
     accel_mag = np.linalg.norm(accel, axis=1)
     jerk_mag = np.linalg.norm(jerk, axis=1)
 
-    def limit(v: np.ndarray) -> float:
-        med = float(np.median(v)) if v.size else 0.0
-        mad = float(np.median(np.abs(v - med))) if v.size else 0.0
-        if mad > 1e-12:
-            return med + k * 1.4826 * mad
-        std = float(np.std(v)) if v.size else 0.0
-        if std > 1e-12:
-            return med + float(cfg.get("fallback_sigma", 3.0)) * std
-        return med + float(cfg.get("absolute_eps", 1e-12))
-
-    accel_lim = limit(accel_mag)
-    jerk_lim = limit(jerk_mag)
+    fallback_sigma = float(cfg.get("fallback_sigma", 3.0))
+    absolute_eps = float(cfg.get("absolute_eps", 1e-12))
+    accel_lim = robust_limit(accel_mag, k, fallback_sigma=fallback_sigma, eps=absolute_eps)
+    jerk_lim = robust_limit(jerk_mag, k, fallback_sigma=fallback_sigma, eps=absolute_eps)
     accel_hit = accel_mag > accel_lim if accel_lim > 0 else np.zeros_like(accel_mag, dtype=bool)
     jerk_hit = jerk_mag > jerk_lim if jerk_lim > 0 else np.zeros_like(jerk_mag, dtype=bool)
 

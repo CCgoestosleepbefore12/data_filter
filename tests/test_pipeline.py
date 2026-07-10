@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import sys
 
+import pytest
 import numpy as np
 
+import data_filter.pipeline as pipeline_mod
 from data_filter.checks.base import CheckResult
 from data_filter.io import schema
-from data_filter.pipeline import run_processed_gate
+from data_filter.pipeline import main, run_processed_gate
 from data_filter.pipeline import run_raw_gate
 from data_filter.report.writer import write_report
 from data_filter.scoring import score_episode
@@ -38,7 +41,7 @@ def test_score_quality_flags_downweights_or_reviews():
     assert score_episode(one, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "keep_with_downweight"
 
     two = [CheckResult("motion", passed=True, severity="warn", flags=["long_static", "low_gripper_coverage"])]
-    assert score_episode(two, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "keep_with_downweight"
+    assert score_episode(two, {"decision": {"review_when_quality_flags_ge": 2}})["label"] == "review"
 
     two_checks = [
         CheckResult("motion", passed=True, severity="warn", flags=["long_static"]),
@@ -101,6 +104,7 @@ def test_write_report_outputs(tmp_path):
     md = open(out["md"], encoding="utf-8").read()
     assert "## Top Reasons" in md
     assert "## Top Check Flags" in md
+    assert "| episode | source | label | 命中 | 证据 |" in md
     assert "rot6d_left(orthogonality)" in md
 
 
@@ -168,3 +172,99 @@ def test_processed_gate_keeps_running_after_check_exception_shape_edge(tmp_path)
     empty = next(e for e in report["episodes"] if e["path"].endswith("empty.hdf5"))
     assert any(r["check"] == "schema_shape" and "too_short" in r["flags"] for r in empty["reasons"])
     assert not any(r["check"] == "check_exception" for r in empty["reasons"])
+
+
+def test_processed_gate_nonnumeric_timestamp_keeps_specific_reason(tmp_path):
+    make_processed_hdf5(tmp_path / "bad_ts.hdf5", T=6, source="pika_umi", timestamps=np.array(["bad"] * 6))
+
+    report = run_processed_gate(str(tmp_path), {"hard_checks": {"timestamp": True}})
+    ep = report["episodes"][0]
+    assert ep["label"] == "drop"
+    assert any(r["check"] == "finite" and "nonnumeric:timestamps" in r["flags"] for r in ep["reasons"])
+    assert not any(r["check"] == "check_exception" for r in ep["reasons"])
+
+
+def test_processed_gate_check_exception_reviews_not_drops(tmp_path, monkeypatch):
+    make_processed_hdf5(tmp_path / "ep.hdf5", T=6, source="pika_umi")
+
+    def boom(_ep, _cfg):
+        raise RuntimeError("synthetic check bug")
+
+    monkeypatch.setattr(pipeline_mod, "_run_processed_checks", boom)
+    report = run_processed_gate(str(tmp_path), {})
+    ep = report["episodes"][0]
+    assert ep["label"] == "review"
+    assert any(r["check"] == "check_exception" for r in ep["reasons"])
+
+
+def test_processed_gate_video_bad_frame_is_quality_flag_not_check_exception(tmp_path):
+    make_processed_hdf5(tmp_path / "ep.hdf5", T=6, source="pika_umi", image_layout="chunked_index")
+
+    report = run_processed_gate(
+        str(tmp_path),
+        {
+            "quality_checks": {"video_quality": True},
+            "thresholds": {"video_quality": {"sample_frames": 4, "blur_var": -1.0, "max_decode_failure_ratio": 0.0}},
+        },
+    )
+    ep = report["episodes"][0]
+    assert not any(r["check"] == "check_exception" for r in ep["reasons"])
+    assert ep["label"] == "keep_high_quality"
+
+
+def test_processed_gate_video_static_uses_continuous_window(tmp_path):
+    make_processed_hdf5(tmp_path / "static.hdf5", T=50, source="pika_umi", image_layout="vlen")
+
+    report = run_processed_gate(
+        str(tmp_path),
+        {
+            "quality_checks": {"video_quality": True},
+            "thresholds": {
+                "video_quality": {
+                    "sample_frames": 4,
+                    "black_luma": -1.0,
+                    "blur_var": -1.0,
+                    "enable_static": True,
+                    "static_min_frames": 45,
+                    "static_window_frames": 45,
+                    "static_sample_windows": 1,
+                    "static_diff_eps": 1.0,
+                }
+            },
+        },
+    )
+    ep = report["episodes"][0]
+    assert any(
+        check["name"] == "video_quality" and "cam_high_static" in check["flags"]
+        for check in ep["checks"]
+    )
+
+
+def test_cli_empty_directory_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["data-filter", "--gate", "processed", "--root", str(tmp_path), "--out", str(tmp_path / "out")],
+    )
+    with pytest.raises(SystemExit, match="未在 data_roots 中找到"):
+        main()
+
+
+def test_cli_rejects_mismatched_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["data-filter", "--gate", "processed", "--config", "raw_teleop", "--root", str(tmp_path)],
+    )
+    with pytest.raises(SystemExit, match="processed gate 只能使用"):
+        main()
+
+
+def test_cli_rejects_source_for_processed_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["data-filter", "--gate", "processed", "--source", "pika", "--root", str(tmp_path)],
+    )
+    with pytest.raises(SystemExit, match="processed gate 不接受 --source"):
+        main()

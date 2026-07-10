@@ -1,9 +1,8 @@
 # processed XVLA 质量闸门配置（P0，最贴近当前训练数据）
-# 阈值均为 provisional，待真实分布 + review 队列校准。
+# 阈值按当前真实数据分布初步校准；运行时建议用 --root 显式指定数据根。
 
-# TODO: 填一个或多个 processed XVLA 根目录
 data_roots:
-  - ""   # TODO
+  - ""
 
 # 每个 processed episode 声明其来源，决定 attrs 契约
 source_kinds: [pika_umi, nas_teleop]
@@ -24,11 +23,10 @@ hard_checks:
 # quality 检查（出 score/flag，不 hard drop）
 quality_checks:
   motion: true           # 速度/加速度/jerk/长静止/过快
-  video_quality: true    # 模糊/黑帧/静止画面比例
+  video_quality: true    # 模糊/黑帧/静止/解码失败比例
   coverage: false        # 待实现：操作阶段 / 夹爪动作覆盖
   multicam: false        # 待实现：多相机可用性
 
-# provisional 阈值
 thresholds:
   rot6d:
     tol: 1.0e-3          # 正交容差（float32 + roundtrip）；判据 = finite + 单位范数 + 正交
@@ -48,11 +46,15 @@ thresholds:
     sample_frames: 4
     black_luma: 8.0
     blur_var: 50.0
+    enable_static: true
     static_min_frames: 45
+    static_window_frames: 45
+    static_sample_windows: 1
     static_diff_eps: 1.0
     max_black_ratio: 0.05
     max_blur_ratio: 0.5
     max_decode_failure_ratio: 0.0
+    max_shape_mismatch_ratio: 0.0
 
 # 决策：三级 + 输出（不重写 hdf5）
 decision:

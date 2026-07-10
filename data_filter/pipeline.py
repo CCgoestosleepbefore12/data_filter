@@ -12,6 +12,8 @@ from __future__ import annotations
 import glob
 import os
 
+import h5py
+
 from .checks.attrs import check_attrs
 from .checks.base import CheckResult
 from .checks.gripper import check_gripper
@@ -27,7 +29,7 @@ from .checks.validity import check_finite, check_min_length, check_required_keys
 from .checks.video import check_video_quality
 from .config import load_config
 from .io import schema
-from .io.loaders import EpisodeSignals, load_processed_xvla, load_raw_pika, load_raw_teleop
+from .io.loaders import EpisodeSignals, load_processed_xvla, load_raw_pika, load_raw_teleop, sample_image_frames
 from .report.writer import write_report
 from .scoring import score_episode
 
@@ -72,7 +74,7 @@ def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
             results.append(check_timestamp(ep.timestamps, thr.get("timestamp", {})))
 
     # 形状和帧数合法才切 rot6d/gripper；结构性失败后短路，避免空数组 max/min 异常。
-    if ep.qpos.ndim == 2 and ep.qpos.shape[1] >= schema.QPOS_DIM and ep.qpos.shape[0] >= 1:
+    if _numeric_matrix(ep.qpos, min_cols=schema.QPOS_DIM, min_rows=1):
         if _enabled(cfg, "rot6d"):
             rot_cfg = thr.get("rot6d", {})
             results.append(check_rot6d(ep.qpos[:, schema.LEFT_ROT6D], rot_cfg, name="rot6d_left"))
@@ -87,6 +89,21 @@ def _run_processed_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
     if _enabled(cfg, "attrs"):
         results.append(check_attrs(ep.attrs, ep.source_kind, {}))
     return results
+
+
+def _numeric_matrix(value, *, min_cols: int, min_rows: int = 1) -> bool:
+    try:
+        import numpy as np
+
+        arr = np.asarray(value)
+        return (
+            arr.ndim == 2
+            and arr.shape[0] >= min_rows
+            and arr.shape[1] >= min_cols
+            and np.issubdtype(arr.dtype, np.number)
+        )
+    except Exception:
+        return False
 
 
 def _summarize(episodes: list[dict]) -> dict:
@@ -183,60 +200,21 @@ def _run_raw_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
 
 def _run_video_checks(ep: EpisodeSignals, cfg: dict) -> list[CheckResult]:
     results: list[CheckResult] = []
-    for key in ep.image_keys:
-        camera = os.path.basename(key)
-        frames = _sample_image_bytes(ep.path, key, cfg)
-        results.append(check_video_quality(frames, cfg, camera=camera))
+    max_frames = int(cfg.get("sample_frames", 4))
+    window_frames = int(cfg.get("static_window_frames", cfg.get("static_min_frames", 45))) if cfg.get("enable_static", False) else 0
+    num_windows = int(cfg.get("static_sample_windows", 2)) if cfg.get("enable_static", False) else 0
+    with h5py.File(ep.path, "r") as h:
+        for key in ep.image_keys:
+            camera = os.path.basename(key)
+            frames = sample_image_frames(
+                h,
+                key,
+                max_frames,
+                window_frames=window_frames,
+                num_windows=num_windows,
+            )
+            results.append(check_video_quality(frames, cfg, camera=camera))
     return results
-
-
-def _sample_image_bytes(path: str, key: str, cfg: dict) -> list[bytes]:
-    import h5py
-    import numpy as np
-
-    max_frames = int(cfg.get("sample_frames", 16))
-    if max_frames <= 0:
-        return []
-    out: list[bytes] = []
-    with h5py.File(path, "r") as h:
-        if key not in h:
-            return out
-        obj = h[key]
-        if isinstance(obj, h5py.Dataset):
-            n = int(obj.shape[0]) if obj.shape else 1
-            for idx in _sample_indices(n, max_frames):
-                out.append(_as_bytes(obj[idx]))
-            return out
-        if isinstance(obj, h5py.Group):
-            rows = []
-            for name in sorted(obj.keys()):
-                child = obj[name]
-                if isinstance(child, h5py.Dataset):
-                    n = int(child.shape[0]) if child.shape else 1
-                    rows.extend((child, i) for i in range(n))
-            for idx in _sample_indices(len(rows), max_frames):
-                child, row = rows[idx]
-                out.append(_as_bytes(child[row]))
-    return out
-
-
-def _sample_indices(n: int, max_frames: int) -> list[int]:
-    import numpy as np
-
-    if n <= 0:
-        return []
-    count = min(n, max_frames)
-    return [int(i) for i in np.linspace(0, n - 1, count, dtype=int)]
-
-
-def _as_bytes(value) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    if isinstance(value, bytearray):
-        return bytes(value)
-    if hasattr(value, "tobytes"):
-        return value.tobytes()
-    return bytes(value)
 
 
 def run_raw_gate(root: str, source: str, cfg: dict | None = None) -> dict:
@@ -255,7 +233,7 @@ def run_raw_gate(root: str, source: str, cfg: dict | None = None) -> dict:
         try:
             episodes.append(_episode_record(path, ep.source_kind, _run_raw_checks(ep, cfg), cfg))
         except Exception as e:
-            episodes.append(_exception_record(path, source, "check_exception", e))
+            episodes.append(_exception_record(path, source, "check_exception", e, label="review"))
     return {"summary": _summarize(episodes), "episodes": episodes}
 
 
@@ -276,7 +254,7 @@ def run_processed_gate(root: str, cfg: dict | None = None) -> dict:
         try:
             episodes.append(_episode_record(path, ep.source_kind, _run_processed_checks(ep, cfg), cfg))
         except Exception as e:
-            episodes.append(_exception_record(path, ep.source_kind, "check_exception", e))
+            episodes.append(_exception_record(path, ep.source_kind, "check_exception", e, label="review"))
 
     return {"summary": _summarize(episodes), "episodes": episodes}
 
@@ -304,6 +282,7 @@ def main() -> None:
                 config_name = "raw_pika"
             else:
                 raise SystemExit("raw gate 缺省配置需要 --source pika|teleop，或显式 --config")
+    _validate_config_selection(args.gate, args.source, config_name)
     cfg = load_config(config_name)
     roots = args.root if args.root else [r for r in cfg.get("data_roots", []) if r]
     roots = [os.path.expanduser(r) for r in roots]
@@ -322,6 +301,8 @@ def main() -> None:
             if source not in {"pika", "teleop"}:
                 raise SystemExit("raw gate 需要 --source pika|teleop，或 config.source_kind")
             episodes.extend(run_raw_gate(root, source, cfg)["episodes"])
+    if not episodes:
+        raise SystemExit(f"未在 data_roots 中找到 *.hdf5: {roots}")
     report = {"summary": _summarize(episodes), "episodes": episodes}
 
     prefix = "processed_validity" if args.gate == "processed" else "raw_quality"
@@ -331,11 +312,30 @@ def main() -> None:
     print(f"report: {paths['json']}")
 
 
-def _exception_record(path: str, source_kind: str, check: str, e: Exception) -> dict:
+def _validate_config_selection(gate: str, source: str | None, config_name: str) -> None:
+    expected = {
+        ("processed", None): "processed_xvla",
+        ("raw", "pika"): "raw_pika",
+        ("raw", "teleop"): "raw_teleop",
+    }
+    if gate == "processed":
+        if config_name != expected[(gate, None)]:
+            raise SystemExit(f"processed gate 只能使用 config=processed_xvla，当前为 {config_name}")
+        if source is not None:
+            raise SystemExit("processed gate 不接受 --source")
+        return
+    if source not in {"pika", "teleop"}:
+        raise SystemExit("raw gate 显式 --config 时也需要 --source pika|teleop")
+    expected_name = expected[(gate, source)]
+    if config_name != expected_name:
+        raise SystemExit(f"raw {source} 只能使用 config={expected_name}，当前为 {config_name}")
+
+
+def _exception_record(path: str, source_kind: str, check: str, e: Exception, *, label: str = "drop") -> dict:
     return {
         "path": path,
         "source_kind": source_kind,
-        "label": "drop",
+        "label": label,
         "reasons": [{"check": check, "flags": [f"{type(e).__name__}: {e}"]}],
         "checks": [],
     }

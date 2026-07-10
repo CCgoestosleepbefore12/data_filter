@@ -87,7 +87,11 @@ def make_processed_hdf5(
             d.attrs[k] = v
         if with_timestamps:
             ts = timestamps if timestamps is not None else (np.arange(T, dtype=np.float32) / 30.0)
-            h.create_dataset("timestamps", data=np.asarray(ts, dtype=np.float32))
+            arr = np.asarray(ts)
+            if arr.dtype.kind in {"U", "O"}:
+                h.create_dataset("timestamps", data=arr.astype(h5py.string_dtype("utf-8")))
+            else:
+                h.create_dataset("timestamps", data=arr)
         nfr = T if n_img_frames is None else n_img_frames
         if image_layout == "vlen":
             vlen = h5py.vlen_dtype(np.uint8)
@@ -97,11 +101,17 @@ def make_processed_hdf5(
                 for i in range(nfr):
                     ds[i] = jpeg
         elif image_layout == "chunked_index":
+            vlen = h5py.vlen_dtype(np.uint8)
+            jpeg = np.frombuffer(_jpeg_bytes(np.full((8, 8, 3), 128, dtype=np.uint8)), dtype=np.uint8)
             for cam in cameras:
                 group = h.create_group(f"observations/images/{cam}")
                 split = max(1, nfr // 2)
-                group.create_dataset("chunk_000000", data=np.zeros((split, 4), dtype=np.uint8))
-                group.create_dataset("chunk_000001", data=np.zeros((nfr - split, 4), dtype=np.uint8))
+                ds0 = group.create_dataset("chunk_000000", (split,), dtype=vlen)
+                ds1 = group.create_dataset("chunk_000001", (nfr - split,), dtype=vlen)
+                for i in range(split):
+                    ds0[i] = jpeg
+                for i in range(nfr - split):
+                    ds1[i] = jpeg
                 h.create_dataset(f"observations/images/{cam}_index", data=np.arange(nfr, dtype=np.int64))
         else:
             raise ValueError(f"unknown image_layout: {image_layout}")

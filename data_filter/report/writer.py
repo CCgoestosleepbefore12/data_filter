@@ -120,14 +120,21 @@ def _render_md(summary: dict, episodes: list, title: str = "Processed validity r
     else:
         lines.append("- 无")
 
-    lines += ["", "## Episodes", "", "| episode | source | label | 命中 |", "|---|---|---|---|"]
+    lines += [
+        "",
+        "## Episodes",
+        "",
+        "| episode | source | label | 命中 | 证据 |",
+        "|---|---|---|---|---|",
+    ]
     for e in episodes:
         reasons = "; ".join(
             f"{r['check']}({','.join(r['flags'])})" for r in e.get("reasons", [])
         )
+        evidence = "; ".join(_format_check_evidence(c) for c in e.get("checks", []) if c.get("flags"))
         lines.append(
             f"| {os.path.basename(e['path'])} | {e.get('source_kind', '-')} "
-            f"| {e.get('label', '-')} | {reasons or '-'} |"
+            f"| {e.get('label', '-')} | {reasons or '-'} | {evidence or '-'} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -151,3 +158,42 @@ def _flag_counter(episodes: list[dict]) -> Counter:
 
 def _format_reason(check: str, flags: list[str]) -> str:
     return f"{check}({','.join(flags)})" if flags else f"{check}()"
+
+
+def _format_check_evidence(check: dict) -> str:
+    metrics = check.get("metrics", {}) or {}
+    keys = [
+        "dt_max_ratio",
+        "max_dt_ratio",
+        "max_clock_skew_s",
+        "threshold_s",
+        "directional_agreement",
+        "da_threshold",
+        "best_lag_frames_est",
+        "max_lag_frames",
+        "best_corr",
+        "corr_threshold",
+        "black_ratio",
+        "max_black_ratio",
+        "blur_ratio",
+        "max_blur_ratio",
+        "decode_failure_ratio",
+        "max_decode_failure_ratio",
+        "shape_mismatch_ratio",
+        "max_shape_mismatch_ratio",
+        "speed_outlier_frames",
+        "jerk_outlier_frames",
+        "longest_static_run",
+        "static_min_frames",
+    ]
+    parts = []
+    for key in keys:
+        if key in metrics:
+            parts.append(f"{key}={_compact_metric(metrics[key])}")
+    return f"{check.get('name', '-')}[{', '.join(parts)}]" if parts else check.get("name", "-")
+
+
+def _compact_metric(value) -> str:
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value)

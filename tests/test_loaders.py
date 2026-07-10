@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from data_filter.io.loaders import load_processed_xvla, load_raw_pika, load_raw_teleop
+import h5py
+
+from data_filter.io.loaders import load_processed_xvla, load_raw_pika, load_raw_teleop, sample_image_frames
 
 from ._fixtures import make_processed_hdf5, make_raw_pika_hdf5, make_raw_teleop_hdf5
 
@@ -44,6 +46,11 @@ def test_load_processed_chunked_image_group_uses_index_length(tmp_path):
     assert len(ep.image_keys) == 3
     assert all(v == 7 for v in ep.image_lengths.values())
     assert all(not k.endswith("_index") for k in ep.image_keys)
+
+    with h5py.File(p, "r") as h:
+        frames = sample_image_frames(h, "observations/images/cam_high", 4, window_frames=3, num_windows=1)
+    assert len(frames) >= 4
+    assert all(frame and frame.startswith(b"\xff\xd8") for frame in frames)
 
 
 def test_load_raw_pika(tmp_path):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ._stats import longest_true_run
 from .base import CheckResult
 
 
@@ -38,11 +39,7 @@ def check_tracking(pose: np.ndarray, cfg: dict) -> CheckResult:
     teleport = step > teleport_m
     frozen_step = step <= frozen_eps
 
-    longest_frozen = 0
-    cur = 0
-    for hit in frozen_step:
-        cur = cur + 1 if hit else 0
-        longest_frozen = max(longest_frozen, cur)
+    longest_frozen = longest_true_run(frozen_step)
 
     flags = []
     if np.any(teleport):

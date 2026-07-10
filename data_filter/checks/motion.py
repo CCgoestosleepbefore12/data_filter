@@ -14,32 +14,8 @@ from __future__ import annotations
 import numpy as np
 
 from ..io import schema
+from ._stats import longest_true_run, robust_limit
 from .base import CheckResult
-
-
-def _robust_limit(values: np.ndarray, k: float, fallback_sigma: float = 3.0) -> float:
-    """median + k * MAD；MAD 退化时用 std 兜底，避免单点异常把阈值抬到 max。"""
-    if values.size == 0:
-        return 0.0
-    med = float(np.median(values))
-    mad = float(np.median(np.abs(values - med)))
-    if mad <= 1e-12:
-        std = float(np.std(values))
-        if std > 1e-12:
-            return med + fallback_sigma * std
-        return med + 1e-12
-    return med + k * 1.4826 * mad
-
-
-def _longest_true_run(mask: np.ndarray) -> int:
-    longest = cur = 0
-    for hit in mask.astype(bool):
-        if hit:
-            cur += 1
-            longest = max(longest, cur)
-        else:
-            cur = 0
-    return int(longest)
 
 
 def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> CheckResult:
@@ -62,12 +38,12 @@ def check_motion_quality(qpos: np.ndarray, cfg: dict, name: str = "motion") -> C
     accel = np.diff(speed)                                # (T-2,)
     jerk = np.diff(accel)                                 # (T-3,)
 
-    speed_limit = _robust_limit(speed, k, fallback_sigma=fallback_sigma)
+    speed_limit = robust_limit(speed, k, fallback_sigma=fallback_sigma)
     jerk_abs = np.abs(jerk)
-    jerk_limit = _robust_limit(jerk_abs, k, fallback_sigma=fallback_sigma)
+    jerk_limit = robust_limit(jerk_abs, k, fallback_sigma=fallback_sigma)
     speed_fast = speed > speed_limit if speed_limit > 0 else np.zeros_like(speed, dtype=bool)
     jerk_spike = jerk_abs > jerk_limit if jerk_limit > 0 else np.zeros_like(jerk_abs, dtype=bool)
-    static_run = _longest_true_run(speed <= static_speed_eps)
+    static_run = longest_true_run(speed <= static_speed_eps)
 
     gripper = qpos[:, [schema.LEFT_GRIP, schema.RIGHT_GRIP]]
     gripper_changes = int(np.count_nonzero(np.any(np.diff(gripper, axis=0) != 0, axis=1)))

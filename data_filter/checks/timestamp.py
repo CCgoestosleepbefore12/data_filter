@@ -13,8 +13,13 @@ from .base import CheckResult
 
 def check_timestamp(ts: np.ndarray, cfg: dict, name: str = "timestamp") -> CheckResult:
     """ts: (T,) 秒。非单调 hard_fail；dt 大跳变只进入 quality 分层。"""
-    t = np.asarray(ts, dtype=np.float64)
+    try:
+        t = np.asarray(ts, dtype=np.float64)
+    except (TypeError, ValueError):
+        return CheckResult.hard(name, False, flags=["nonnumeric"])
     if t.size < 2:
+        if not np.all(np.isfinite(t)):
+            return CheckResult.hard(name, False, metrics={"n": int(t.size)}, flags=["nonfinite"])
         return CheckResult(name, passed=True, severity="info", metrics={"n": int(t.size)})
     if not np.all(np.isfinite(t)):
         return CheckResult.hard(name, False, flags=["nonfinite"])
@@ -22,13 +27,19 @@ def check_timestamp(ts: np.ndarray, cfg: dict, name: str = "timestamp") -> Check
     dt = np.diff(t)                                        # (T-1,)
     med = float(np.median(dt))
     dt_max_ratio = float(np.max(dt) / med) if med > 0 else float("inf")
-    metrics = {"dt_median": med, "dt_max_ratio": dt_max_ratio, "monotonic": bool(np.all(dt > 0))}
+    max_dt_ratio = float(cfg.get("max_dt_ratio", 3.0))
+    metrics = {
+        "dt_median": med,
+        "dt_max_ratio": dt_max_ratio,
+        "max_dt_ratio": max_dt_ratio,
+        "monotonic": bool(np.all(dt > 0)),
+    }
 
     hard_flags = []
     quality_flags = []
     if not np.all(dt > 0):
         hard_flags.append("non_monotonic")
-    if dt_max_ratio > cfg.get("max_dt_ratio", 3.0):
+    if dt_max_ratio > max_dt_ratio:
         quality_flags.append("dt_jump")
     if hard_flags:
         return CheckResult.hard(name, False, metrics=metrics, flags=hard_flags)
@@ -48,8 +59,11 @@ def check_clock_skew(
     name: str = "timestamp_skew",
 ) -> CheckResult:
     """检查两路同源时钟是否同步。超阈值作为 quality flag，非数值/空数组 hard fail。"""
-    ref = np.asarray(reference_ts, dtype=np.float64)
-    other = np.asarray(other_ts, dtype=np.float64)
+    try:
+        ref = np.asarray(reference_ts, dtype=np.float64)
+        other = np.asarray(other_ts, dtype=np.float64)
+    except (TypeError, ValueError):
+        return CheckResult.hard(name, False, flags=["nonnumeric"])
     n = min(ref.size, other.size)
     if n == 0:
         return CheckResult.hard(name, False, metrics={"n": int(n)}, flags=["missing"])

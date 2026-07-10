@@ -189,7 +189,7 @@ def test_bimanual_activity_flags_frozen_right_arm():
     assert "left_arm_frozen" not in r.flags
 
 
-def test_video_quality_flags_black_and_static():
+def test_video_quality_flags_black_without_static_by_default():
     frames = np.zeros((12, 8, 8, 3), dtype=np.uint8)
     r = check_video_quality(
         frames,
@@ -197,14 +197,35 @@ def test_video_quality_flags_black_and_static():
             "black_luma": 8.0,
             "max_black_ratio": 0.1,
             "blur_var": -1.0,
-            "static_min_frames": 5,
-            "static_diff_eps": 1.0,
         },
         camera="cam_high",
     )
     assert r.passed
     assert "cam_high_black" in r.flags
+    assert "cam_high_static" not in r.flags
+
+
+def test_video_quality_static_requires_explicit_enable():
+    frames = np.zeros((12, 8, 8, 3), dtype=np.uint8)
+    r = check_video_quality(
+        frames,
+        {
+            "black_luma": -1.0,
+            "blur_var": -1.0,
+            "enable_static": True,
+            "static_min_frames": 5,
+            "static_diff_eps": 1.0,
+        },
+        camera="cam_high",
+    )
     assert "cam_high_static" in r.flags
+
+
+def test_video_quality_accepts_decoded_frame_list():
+    frames = [np.full((8, 8, 3), 128, dtype=np.uint8), np.full((8, 8, 3), 130, dtype=np.uint8)]
+    r = check_video_quality(frames, {"black_luma": 8.0, "blur_var": -1.0}, camera="cam_high")
+    assert r.metrics["n_frames"] == 2
+    assert "cam_high_decode_failed" not in r.flags
 
 
 def test_state_action_flags_low_directional_agreement():
